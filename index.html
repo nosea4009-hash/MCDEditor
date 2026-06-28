@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Editor de Discusiones de Mesoescala (MCD)</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⛈️</span>
+      <div>
+        <strong>Editor MCD</strong>
+        <small>Discusiones de Mesoescala · estilo SPC</small>
+      </div>
+    </div>
+    <div class="file-actions">
+      <label class="btn primary" title="Cargar imagen de radar o satélite">
+        📷 Cargar imagen
+        <input type="file" id="imageInput" accept="image/*" hidden />
+      </label>
+      <button class="btn" id="btnNewCanvas" title="Lienzo en blanco">📄 Lienzo en blanco</button>
+      <span class="sep"></span>
+      <button class="btn" id="btnExportPng" title="Exportar como PNG">⬇️ Exportar PNG</button>
+      <button class="btn" id="btnSaveProj" title="Guardar proyecto editable (.json)">💾 Guardar</button>
+      <label class="btn" title="Abrir proyecto .json">
+        📂 Abrir
+        <input type="file" id="projInput" accept="application/json" hidden />
+      </label>
+      <span class="sep"></span>
+      <button class="btn" id="btnUndo" title="Deshacer (Ctrl+Z)">↶</button>
+      <button class="btn" id="btnRedo" title="Rehacer (Ctrl+Y)">↷</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- Left toolbar -->
+    <nav class="toolbar" id="toolbar">
+      <div class="tool-group">
+        <span class="tool-label">Herramientas</span>
+        <button class="tool" data-tool="select" title="Seleccionar / mover (V)">▣ Seleccionar</button>
+        <button class="tool" data-tool="text" title="Texto libre (T)">🅣 Texto</button>
+        <button class="tool" data-tool="place-textbox" title="Caja con texto (estilo número MCD)">▭ Caja de texto</button>
+        <button class="tool" data-tool="arrow" title="Flecha">➤ Flecha</button>
+        <button class="tool" data-tool="polyline" title="Poli-línea (clics; doble clic para terminar)">⤳ Poli-línea</button>
+        <button class="tool" data-tool="freehand" title="Trazo libre">✎ Trazo libre</button>
+        <button class="tool" data-tool="polygon" title="Área / polígono resaltado">⬡ Área</button>
+        <button class="tool" data-tool="rect" title="Rectángulo">▢ Rectángulo</button>
+        <button class="tool" data-tool="ellipse" title="Elipse / círculo">◯ Elipse</button>
+      </div>
+
+      <div class="tool-group">
+        <span class="tool-label">Frentes</span>
+        <button class="tool front" data-tool="front" data-front="cold" title="Frente frío (triángulos azules)">
+          <span class="swatch cold"></span> Frío
+        </button>
+        <button class="tool front" data-tool="front" data-front="warm" title="Frente cálido (semicírculos rojos)">
+          <span class="swatch warm"></span> Cálido
+        </button>
+        <button class="tool front" data-tool="front" data-front="occluded" title="Frente ocluido (morado)">
+          <span class="swatch occ"></span> Ocluido
+        </button>
+        <button class="tool front" data-tool="front" data-front="stationary" title="Frente estacionario">
+          <span class="swatch stat"></span> Estacionario
+        </button>
+        <button class="tool front" data-tool="front" data-front="dryline" title="Línea seca (dryline)">
+          <span class="swatch dry"></span> Dryline
+        </button>
+        <button class="tool front" data-tool="front" data-front="outflow" title="Límite de outflow">
+          <span class="swatch out"></span> Outflow
+        </button>
+        <button class="tool front" data-tool="front" data-front="trough" title="Vaguada (trough)">
+          <span class="swatch trough"></span> Vaguada
+        </button>
+      </div>
+
+      <div class="tool-hint" id="toolHint">
+        Carga una imagen para empezar. Luego elige una herramienta.
+      </div>
+    </nav>
+
+    <!-- Stage -->
+    <section class="stage" id="stage">
+      <div class="stage-toolbar">
+        <button class="mini" id="btnZoomOut" title="Alejar">−</button>
+        <span id="zoomLabel">Ajustar</span>
+        <button class="mini" id="btnZoomIn" title="Acercar">+</button>
+        <button class="mini" id="btnZoomFit" title="Ajustar a ventana">⤢ Ajustar</button>
+        <button class="mini" id="btnZoom100" title="Tamaño real">1:1</button>
+      </div>
+      <div class="canvas-scroll" id="canvasScroll">
+        <div class="canvas-holder" id="canvasHolder">
+          <canvas id="board" width="1200" height="800"></canvas>
+        </div>
+      </div>
+      <div class="statusbar" id="statusbar">Listo.</div>
+    </section>
+
+    <!-- Right properties panel -->
+    <aside class="panel" id="panel">
+      <div class="panel-header" id="panelTitle">Propiedades</div>
+      <div class="panel-body" id="panelBody">
+        <!-- populated dynamically -->
+      </div>
+    </aside>
+  </div>
+
+  <!-- inline text editor -->
+  <textarea id="textEditor" class="text-editor" spellcheck="false"></textarea>
+
+  <script src="js/geometry.js"></script>
+  <script src="js/fronts.js"></script>
+  <script src="js/shapes.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/main.js"></script>
+
+  <!-- Pegar (Ctrl+V) y arrastrar-soltar imágenes: reutiliza el selector de archivos -->
+  <script>
+  (function () {
+    "use strict";
+    const input = document.getElementById("imageInput");
+    const stage = document.getElementById("stage");
+    const statusbar = document.getElementById("statusbar");
+
+    function loadImageFile(file) {
+      if (!file || !/^image\//.test(file.type)) return false;
+      try {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      } catch (err) {
+        // Fallback si DataTransfer no está disponible: leer directo
+        const reader = new FileReader();
+        reader.onload = () => input.dispatchEvent(new CustomEvent("imagedata", { detail: reader.result }));
+        reader.readAsDataURL(file);
+      }
+      if (statusbar) statusbar.textContent = "Imagen recibida desde el portapapeles / arrastrar.";
+      return true;
+    }
+
+    // --- Pegar desde el portapapeles ---
+    window.addEventListener("paste", function (e) {
+      const items = (e.clipboardData && e.clipboardData.items) || [];
+      for (const it of items) {
+        if (it.kind === "file" && /^image\//.test(it.type)) {
+          if (loadImageFile(it.getAsFile())) e.preventDefault();
+          return;
+        }
+      }
+    });
+
+    // --- Arrastrar y soltar ---
+    ["dragenter", "dragover"].forEach((ev) =>
+      window.addEventListener(ev, (e) => { e.preventDefault(); if (stage) stage.style.outline = "2px dashed #2f81f7"; })
+    );
+    ["dragleave", "drop"].forEach((ev) =>
+      window.addEventListener(ev, () => { if (stage) stage.style.outline = ""; })
+    );
+    window.addEventListener("drop", function (e) {
+      e.preventDefault();
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) loadImageFile(f);
+    });
+  })();
+  </script>
+</body>
+</html>
