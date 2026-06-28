@@ -22,6 +22,7 @@
         <input type="file" id="imageInput" accept="image/*" hidden />
       </label>
       <button class="btn" id="btnNewCanvas" title="Lienzo en blanco">📄 Lienzo en blanco</button>
+      <button class="btn" id="btnTemplate" title="Insertar plantilla de Discusión de Mesoescala (estilo SPC)">📋 Plantilla MCD</button>
       <span class="sep"></span>
       <button class="btn" id="btnExportPng" title="Exportar como PNG">⬇️ Exportar PNG</button>
       <button class="btn" id="btnSaveProj" title="Guardar proyecto editable (.json)">💾 Guardar</button>
@@ -49,6 +50,11 @@
         <button class="tool" data-tool="polygon" title="Área / polígono resaltado">⬡ Área</button>
         <button class="tool" data-tool="rect" title="Rectángulo">▢ Rectángulo</button>
         <button class="tool" data-tool="ellipse" title="Elipse / círculo">◯ Elipse</button>
+      </div>
+
+      <div class="tool-group">
+        <span class="tool-label">Datos</span>
+        <button class="tool" data-tool="station" title="Modelo de estación (viento, T, Td, presión, cielo)">⊛ Estación</button>
       </div>
 
       <div class="tool-group">
@@ -109,6 +115,28 @@
 
   <!-- inline text editor -->
   <textarea id="textEditor" class="text-editor" spellcheck="false"></textarea>
+
+  <!-- Modal: plantilla de Discusión de Mesoescala -->
+  <div class="modal-overlay" id="tplModal" hidden>
+    <div class="modal">
+      <h3>📋 Plantilla de Discusión de Mesoescala</h3>
+      <p class="modal-sub">Genera un encabezado estilo SPC con la hora UTC. Luego puedes mover y editar cada bloque como cualquier texto.</p>
+      <div class="modal-grid">
+        <label>N° de discusión <input type="text" id="tplNum" value="0001" /></label>
+        <label>Prob. de aviso (%) <input type="number" id="tplProb" value="40" min="0" max="100" /></label>
+        <label class="full">Emitida por <input type="text" id="tplOffice" value="Centro de Predicción de Mesoescala" /></label>
+        <label>Válido desde (UTC) <input type="text" id="tplFrom" placeholder="DDHHMMZ" /></label>
+        <label>Válido hasta (UTC) <input type="text" id="tplTo" placeholder="DDHHMMZ" /></label>
+        <label class="full">Áreas afectadas <input type="text" id="tplAreas" placeholder="p. ej. centro-este de Argentina" /></label>
+        <label class="full">Resumen <textarea id="tplSummary" rows="3" placeholder="Texto del análisis / resumen…"></textarea></label>
+        <label class="full checkbox-row"><input type="checkbox" id="tplFooter" checked /> Incluir pie con fecha/hora de generación</label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="tplCancel">Cancelar</button>
+        <button class="btn primary" id="tplInsert">Insertar plantilla</button>
+      </div>
+    </div>
+  </div>
 
   <script src="js/geometry.js"></script>
   <script src="js/fronts.js"></script>

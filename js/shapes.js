@@ -65,6 +65,10 @@
       const lh = (s.fontSize || 18) * 1.25;
       return { x: s.x, y: s.y, w: maxW + 4, h: lh * lines.length + 4 };
     }
+    if (s.type === "station") {
+      const size = s.size || 72;
+      return { x: s.x - size, y: s.y - size, w: size * 2, h: size * 2 };
+    }
     return normBox(s);
   };
 
@@ -115,6 +119,10 @@
         const fine = Geo.smoothPath(s.points, 0.5);
         return Geo.pointPolylineDistance(p, fine) <= (s.lineWidth || 4) + tol + 6;
       }
+      case "station": {
+        const b = Shapes.bounds(s);
+        return p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+      }
       default:
         return false;
     }
@@ -133,6 +141,139 @@
     ctx.fillStyle = color;
     ctx.fill();
   }
+
+  // ---- wind barb ----
+  // dirDeg = meteorological direction the wind comes FROM (0=N, 90=E).
+  // southern=true mirrors the barbs (Southern-Hemisphere convention).
+  function drawWindBarb(ctx, cx, cy, dirDeg, speedKt, length, color, southern) {
+    speedKt = Math.max(0, Math.round((speedKt || 0) / 5) * 5);
+    const ang = (dirDeg || 0) * Math.PI / 180;
+    const ux = Math.sin(ang), uy = -Math.cos(ang); // toward source direction (N=up)
+    const ex = cx + ux * length, ey = cy + uy * length; // staff tip away from station
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.5, length * 0.05);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    if (speedKt < 3) {
+      ctx.beginPath(); ctx.arc(cx, cy, Math.max(3, length * 0.13), 0, Math.PI * 2); ctx.stroke();
+      ctx.restore(); return;
+    }
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+    const sx = -ux, sy = -uy;                  // tip -> station direction
+    const sgn = southern ? -1 : 1;
+    const px = -uy * sgn, py = ux * sgn;        // perpendicular (barb side)
+    const barbLen = length * 0.42;
+    const step = length * 0.15;
+    const pointAt = (d) => ({ x: ex + sx * d, y: ey + sy * d });
+    let cursor = 0, rem = speedKt;
+    while (rem >= 50) { // pennants
+      const a = pointAt(cursor), b = pointAt(cursor + step);
+      const tip = { x: a.x + px * barbLen, y: a.y + py * barbLen };
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(tip.x, tip.y); ctx.lineTo(b.x, b.y); ctx.closePath(); ctx.fill();
+      cursor += step * 1.25; rem -= 50;
+    }
+    while (rem >= 10) { // full barbs
+      const a = pointAt(cursor);
+      const tip = { x: a.x + px * barbLen, y: a.y + py * barbLen };
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+      cursor += step; rem -= 10;
+    }
+    if (rem >= 5) { // half barb
+      if (cursor === 0) cursor = step;
+      const a = pointAt(cursor);
+      const tip = { x: a.x + px * barbLen * 0.5, y: a.y + py * barbLen * 0.5 };
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  Shapes.drawWindBarb = drawWindBarb;
+
+  // ---- sky-cover circle (oktas 0..8) ----
+  function drawSkyCover(ctx, cx, cy, r, oktas, color) {
+    oktas = Math.max(0, Math.min(8, oktas == null ? 0 : oktas));
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.2, r * 0.14);
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    if (oktas <= 0) { ctx.restore(); return; }
+    if (oktas >= 8) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return; }
+    const start = -Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, start, start + (oktas / 8) * Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ---- present-weather symbols (simplified) ----
+  function drawPresentWx(ctx, cx, cy, sz, code, color) {
+    if (!code || code === "none") return;
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.4, sz * 0.08);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    const dot = (x, y, rr) => { ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.fill(); };
+    if (code === "rain") {
+      dot(cx - sz * 0.18, cy - sz * 0.05, sz * 0.09);
+      dot(cx + sz * 0.18, cy - sz * 0.05, sz * 0.09);
+      dot(cx, cy + sz * 0.20, sz * 0.09);
+    } else if (code === "drizzle") {
+      const comma = (x, y) => { ctx.beginPath(); ctx.arc(x, y, sz * 0.08, Math.PI * 0.2, Math.PI * 1.4); ctx.stroke(); };
+      comma(cx - sz * 0.16, cy); comma(cx + sz * 0.16, cy); comma(cx, cy + sz * 0.22);
+    } else if (code === "snow") {
+      ctx.beginPath();
+      for (let i = 0; i < 3; i++) {
+        const a = i * Math.PI / 3;
+        ctx.moveTo(cx - Math.cos(a) * sz * 0.22, cy - Math.sin(a) * sz * 0.22);
+        ctx.lineTo(cx + Math.cos(a) * sz * 0.22, cy + Math.sin(a) * sz * 0.22);
+      }
+      ctx.stroke();
+    } else if (code === "showers") {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - sz * 0.24); ctx.lineTo(cx - sz * 0.20, cy + sz * 0.12); ctx.lineTo(cx + sz * 0.20, cy + sz * 0.12);
+      ctx.closePath(); ctx.fill();
+      dot(cx, cy + sz * 0.26, sz * 0.08);
+    } else if (code === "tstorm") {
+      ctx.beginPath();
+      ctx.moveTo(cx - sz * 0.12, cy - sz * 0.26);
+      ctx.lineTo(cx + sz * 0.06, cy - sz * 0.26);
+      ctx.lineTo(cx - sz * 0.04, cy + sz * 0.02);
+      ctx.lineTo(cx + sz * 0.14, cy + sz * 0.02);
+      ctx.lineTo(cx - sz * 0.10, cy + sz * 0.30);
+      ctx.lineTo(cx - sz * 0.02, cy + sz * 0.06);
+      ctx.lineTo(cx - sz * 0.16, cy + sz * 0.06);
+      ctx.closePath(); ctx.fill();
+    } else if (code === "fog") {
+      ctx.beginPath();
+      for (let i = -1; i <= 1; i++) {
+        const y = cy + i * sz * 0.16;
+        ctx.moveTo(cx - sz * 0.24, y); ctx.lineTo(cx + sz * 0.24, y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ---- station model ----
+  function drawStation(ctx, s) {
+    const size = s.size || 72;
+    const cx = s.x, cy = s.y;
+    const color = s.color || "#111111";
+    const r = size * 0.16;
+    drawWindBarb(ctx, cx, cy, s.windDir || 0, s.windSpeed || 0, size * 0.85, color, s.hemisphere === "S");
+    drawSkyCover(ctx, cx, cy, r, s.cover == null ? 0 : s.cover, color);
+    const ts = Math.max(9, size * 0.2);
+    ctx.fillStyle = color;
+    ctx.font = `bold ${Math.round(ts)}px Arial`;
+    ctx.textBaseline = "middle";
+    const dx = size * 0.30, dy = size * 0.24;
+    if (s.temp !== "" && s.temp != null) { ctx.textAlign = "right"; ctx.fillText(String(s.temp), cx - dx, cy - dy); }
+    if (s.dewpoint !== "" && s.dewpoint != null) { ctx.textAlign = "right"; ctx.fillText(String(s.dewpoint), cx - dx, cy + dy); }
+    if (s.pressure !== "" && s.pressure != null) { ctx.textAlign = "left"; ctx.fillText(String(s.pressure), cx + dx, cy - dy); }
+    drawPresentWx(ctx, cx - dx - ts * 0.7, cy, ts * 1.1, s.presentWx, color);
+  }
+  Shapes.drawStation = drawStation;
 
   // ---- rendering ----
   Shapes.draw = function (ctx, s) {
@@ -265,6 +406,10 @@
         });
         break;
       }
+      case "station": {
+        drawStation(ctx, s);
+        break;
+      }
     }
     ctx.restore();
   };
@@ -325,6 +470,15 @@
         return Object.assign(base, {
           points: [], frontType: style.frontType || "cold", side: style.side || 1,
           lineWidth: style.lineWidth || 4, scale: style.scale || 1,
+        });
+      case "station":
+        return Object.assign(base, {
+          x: 0, y: 0, size: style.stationSize || 72,
+          temp: "12", dewpoint: "9", pressure: "132",
+          cover: 4, presentWx: "none",
+          windDir: 320, windSpeed: 15,
+          hemisphere: style.hemisphere || "S",
+          color: "#111111",
         });
       default:
         return base;
