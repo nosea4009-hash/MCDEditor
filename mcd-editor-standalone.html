@@ -272,11 +272,13 @@ input[type="range"] { width: 100%; }
         <button class="tool" data-tool="polygon" title="Área / polígono resaltado">⬡ Área</button>
         <button class="tool" data-tool="rect" title="Rectángulo">▢ Rectángulo</button>
         <button class="tool" data-tool="ellipse" title="Elipse / círculo">◯ Elipse</button>
+        <button class="tool" data-tool="isobar" title="Isobara (línea de presión multipunto, con etiqueta)">〜 Isobara</button>
       </div>
 
       <div class="tool-group">
         <span class="tool-label">Datos</span>
         <button class="tool" data-tool="station" title="Modelo de estación (viento, T, Td, presión, cielo)">⊛ Estación</button>
+        <button class="tool" data-tool="wxsymbol" title="Símbolo de tormenta (R) y otros símbolos de tiempo">⛈ Tormenta</button>
       </div>
 
       <div class="tool-group">
@@ -716,7 +718,7 @@ input[type="range"] { width: 100%; }
   }
   Shapes.normBox = normBox;
 
-  const POINT_TYPES = ["arrow", "polyline", "freehand", "polygon", "front"];
+  const POINT_TYPES = ["arrow", "polyline", "freehand", "polygon", "front", "isobar"];
   Shapes.isPointBased = (s) => POINT_TYPES.includes(s.type);
 
   // ---- bounds ----
@@ -736,6 +738,10 @@ input[type="range"] { width: 100%; }
     if (s.type === "station") {
       const size = s.size || 72;
       return { x: s.x - size, y: s.y - size, w: size * 2, h: size * 2 };
+    }
+    if (s.type === "wxsymbol") {
+      const h = (s.size || 48) * 0.6;
+      return { x: s.x - h, y: s.y - h, w: h * 2, h: h * 2 };
     }
     return normBox(s);
   };
@@ -787,7 +793,16 @@ input[type="range"] { width: 100%; }
         const fine = Geo.smoothPath(s.points, 0.5);
         return Geo.pointPolylineDistance(p, fine) <= (s.lineWidth || 4) + tol + 6;
       }
+      case "isobar": {
+        if (!s.points || s.points.length < 2) return false;
+        const fine = s.smooth === false ? s.points : Geo.smoothPath(s.points, 0.5);
+        return Geo.pointPolylineDistance(p, fine) <= (s.strokeWidth || 2) + tol + 4;
+      }
       case "station": {
+        const b = Shapes.bounds(s);
+        return p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+      }
+      case "wxsymbol": {
         const b = Shapes.bounds(s);
         return p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
       }
@@ -943,6 +958,71 @@ input[type="range"] { width: 100%; }
   }
   Shapes.drawStation = drawStation;
 
+  // ---- hatch fill (caller must set the clip path first) ----
+  function drawHatch(ctx, b, style, gap, color, width) {
+    gap = Math.max(3, gap || 10);
+    ctx.save();
+    ctx.strokeStyle = color || "#d11111";
+    ctx.lineWidth = width || 1.5;
+    ctx.beginPath();
+    const x = b.x, y = b.y, x1 = b.x + b.w, y1 = b.y + b.h, w = b.w, h = b.h;
+    const diag = (sign) => {
+      for (let d = -h; d <= w; d += gap) {
+        if (sign > 0) { ctx.moveTo(x + d, y1); ctx.lineTo(x + d + h, y1 - h); }
+        else { ctx.moveTo(x + d, y); ctx.lineTo(x + d + h, y + h); }
+      }
+    };
+    if (style === "horizontal") { for (let yy = y; yy <= y1; yy += gap) { ctx.moveTo(x, yy); ctx.lineTo(x1, yy); } }
+    else if (style === "vertical") { for (let xx = x; xx <= x1; xx += gap) { ctx.moveTo(xx, y); ctx.lineTo(xx, y1); } }
+    else if (style === "diagonal") { diag(1); }
+    else if (style === "diagonal2") { diag(-1); }
+    else if (style === "cross") { diag(1); diag(-1); }
+    ctx.stroke();
+    ctx.restore();
+  }
+  Shapes.drawHatch = drawHatch;
+
+  // ---- synoptic thunderstorm symbol (R-shape with lightning arrow) ----
+  function drawThunderstormR(ctx, cx, cy, sz, color) {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(2, sz * 0.1);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    const x0 = cx - sz * 0.28;
+    const top = cy - sz * 0.5, bot = cy + sz * 0.5, mid = cy;
+    // stem
+    ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0, bot); ctx.stroke();
+    // bowl (top half of the R)
+    ctx.beginPath();
+    ctx.moveTo(x0, top);
+    ctx.lineTo(cx + sz * 0.05, top);
+    ctx.quadraticCurveTo(cx + sz * 0.32, top, cx + sz * 0.32, (top + mid) / 2);
+    ctx.quadraticCurveTo(cx + sz * 0.32, mid, cx + sz * 0.05, mid);
+    ctx.lineTo(x0, mid);
+    ctx.stroke();
+    // leg
+    ctx.beginPath(); ctx.moveTo(cx + sz * 0.02, mid); ctx.lineTo(cx + sz * 0.30, bot); ctx.stroke();
+    // lightning arrowhead at the leg tip (points down)
+    const ax = cx + sz * 0.30, ay = bot;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay); ctx.lineTo(ax - sz * 0.16, ay - sz * 0.03);
+    ctx.moveTo(ax, ay); ctx.lineTo(ax - sz * 0.03, ay - sz * 0.18);
+    ctx.stroke();
+    ctx.restore();
+  }
+  Shapes.drawThunderstormR = drawThunderstormR;
+
+  // ---- standalone weather symbol ----
+  function drawWxSymbol(ctx, s) {
+    const sz = s.size || 48;
+    const color = s.color || "#d11111";
+    const code = s.symbol || "thunderstorm";
+    if (code === "thunderstorm") { drawThunderstormR(ctx, s.x, s.y, sz, color); return; }
+    if (code === "tstorm-bolt") { drawPresentWx(ctx, s.x, s.y, sz, "tstorm", color); return; }
+    drawPresentWx(ctx, s.x, s.y, sz, code, color);
+  }
+  Shapes.drawWxSymbol = drawWxSymbol;
+
   // ---- rendering ----
   Shapes.draw = function (ctx, s) {
     ctx.save();
@@ -1021,12 +1101,22 @@ input[type="range"] { width: 100%; }
       }
       case "polygon": {
         if (!s.points || s.points.length < 2) break;
-        ctx.beginPath();
-        ctx.moveTo(s.points[0].x, s.points[0].y);
-        for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
-        ctx.closePath();
+        const poly = () => {
+          ctx.beginPath();
+          ctx.moveTo(s.points[0].x, s.points[0].y);
+          for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
+          ctx.closePath();
+        };
+        poly();
         if (s.fill && s.fill !== "none") { ctx.fillStyle = s.fill; ctx.fill(); }
+        if (s.hatch && s.hatch !== "none") {
+          ctx.save();
+          poly(); ctx.clip();
+          drawHatch(ctx, Geo.bbox(s.points), s.hatch, s.hatchGap, s.hatchColor, s.hatchWidth);
+          ctx.restore();
+        }
         if (s.stroke && s.stroke !== "none") {
+          poly();
           ctx.strokeStyle = s.stroke; ctx.lineWidth = s.strokeWidth || 2;
           ctx.setLineDash(s.dash || []);
           ctx.stroke();
@@ -1078,6 +1168,39 @@ input[type="range"] { width: 100%; }
         drawStation(ctx, s);
         break;
       }
+      case "isobar": {
+        if (!s.points || s.points.length < 2) break;
+        const fine = s.smooth === false ? s.points : Geo.smoothPath(s.points, 0.5);
+        ctx.beginPath();
+        ctx.moveTo(fine[0].x, fine[0].y);
+        for (let i = 1; i < fine.length; i++) ctx.lineTo(fine[i].x, fine[i].y);
+        ctx.strokeStyle = s.stroke || "#333333";
+        ctx.lineWidth = s.strokeWidth || 2;
+        ctx.lineJoin = "round"; ctx.lineCap = "round";
+        const lw = s.strokeWidth || 2;
+        ctx.setLineDash(s.dash ? [Math.max(8, lw * 3), lw * 2] : []);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (s.label != null && String(s.label) !== "") {
+          const ls = s.labelSize || 14;
+          ctx.font = `bold ${ls}px Arial`;
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.lineJoin = "round";
+          const ends = [fine[0], fine[fine.length - 1]];
+          for (const pt of ends) {
+            ctx.lineWidth = Math.max(3, ls * 0.28);
+            ctx.strokeStyle = "#ffffff";
+            ctx.strokeText(String(s.label), pt.x, pt.y);
+            ctx.fillStyle = s.stroke || "#333333";
+            ctx.fillText(String(s.label), pt.x, pt.y);
+          }
+        }
+        break;
+      }
+      case "wxsymbol": {
+        drawWxSymbol(ctx, s);
+        break;
+      }
     }
     ctx.restore();
   };
@@ -1121,6 +1244,8 @@ input[type="range"] { width: 100%; }
           points: [],
           fill: "rgba(255,210,0,0.18)", stroke: style.stroke || "#d11", strokeWidth: style.strokeWidth || 3,
           dash: [],
+          hatch: style.hatch || "none", hatchColor: style.hatchColor || "#d11111",
+          hatchGap: style.hatchGap || 10, hatchWidth: style.hatchWidth || 1.5,
         });
       case "polyline":
         return Object.assign(base, {
@@ -1147,6 +1272,16 @@ input[type="range"] { width: 100%; }
           windDir: 320, windSpeed: 15,
           hemisphere: style.hemisphere || "S",
           color: "#111111",
+        });
+      case "isobar":
+        return Object.assign(base, {
+          points: [], stroke: style.isobarColor || "#7a4a00", strokeWidth: style.strokeWidth || 2,
+          dash: false, smooth: true, label: "", labelSize: 14,
+        });
+      case "wxsymbol":
+        return Object.assign(base, {
+          x: 0, y: 0, symbol: style.wxSymbol || "thunderstorm",
+          size: style.wxSize || 48, color: style.wxColor || "#d11111",
         });
       default:
         return base;
@@ -1455,7 +1590,7 @@ input[type="range"] { width: 100%; }
         ctx.lineWidth = 1.5 / this._screenScale;
         ctx.stroke();
       }
-    } else if (s.type !== "station") {
+    } else if (s.type !== "station" && s.type !== "wxsymbol") {
       for (const h of this._handleRects(s)) {        ctx.beginPath();
         ctx.rect(h.x - h.r, h.y - h.r, h.r * 2, h.r * 2);
         ctx.fillStyle = "#ffffff";
@@ -1484,7 +1619,7 @@ input[type="range"] { width: 100%; }
       }
       return null;
     }
-    if (s.type === "station") return null;
+    if (s.type === "station" || s.type === "wxsymbol") return null;
     for (const h of this._handleRects(s)) {
       if (Math.abs(p.x - h.x) <= tol && Math.abs(p.y - h.y) <= tol) return { handle: h.name };
     }
@@ -1507,7 +1642,7 @@ input[type="range"] { width: 100%; }
     const tool = this.tool;
 
     // multi-point tools accumulate via clicks
-    if (["polyline", "polygon", "front"].includes(tool)) {
+    if (["polyline", "polygon", "front", "isobar"].includes(tool)) {
       if (!this.draft) {
         this.draft = Shapes.create(tool, this.style);
         this.draft.points = [];
@@ -1572,6 +1707,18 @@ input[type="range"] { width: 100%; }
 
     if (tool === "station") {
       const s = Shapes.create("station", this.style);
+      s.x = p.x; s.y = p.y;
+      this.objects.push(s);
+      this.selectedId = s.id;
+      this.pushHistory();
+      this.render();
+      this._emitChange();
+      this.setTool("select");
+      return;
+    }
+
+    if (tool === "wxsymbol") {
+      const s = Shapes.create("wxsymbol", this.style);
       s.x = p.x; s.y = p.y;
       this.objects.push(s);
       this.selectedId = s.id;
@@ -1871,6 +2018,8 @@ input[type="range"] { width: 100%; }
     ellipse: "Arrastra para dibujar una elipse. Shift = círculo.",
     front: "Clic para añadir puntos del frente. Doble clic o Enter para terminar. Usa 'Voltear lado' para cambiar la dirección de los símbolos.",
     station: "Clic para colocar un modelo de estación. Luego edita viento, T, Td, presión y cielo en el panel de la derecha.",
+    isobar: "Clic para añadir puntos de la isobara. Doble clic o Enter para terminar. Elige color y escribe el valor (p. ej. 1012) en el panel.",
+    wxsymbol: "Clic para colocar un símbolo de tiempo (tormenta 'R', lluvia, nieve…). Cambia tipo, color y tamaño en el panel.",
   };
   function updateToolHint(tool, front) {
     let h = HINTS[tool] || "";
@@ -2138,7 +2287,9 @@ input[type="range"] { width: 100%; }
     else if (sel.type === "polyline" || sel.type === "freehand") buildLineControls(sel, false);
     else if (sel.type === "arrow") buildLineControls(sel, true);
     else if (sel.type === "front") buildFrontControls(sel);
+    else if (sel.type === "isobar") buildIsobarControls(sel);
     else if (sel.type === "station") buildStationControls(sel);
+    else if (sel.type === "wxsymbol") buildWxSymbolControls(sel);
     else if (sel.type === "image") buildImageControls(sel);
 
     // ---- opacity (all) ----
@@ -2257,11 +2408,19 @@ input[type="range"] { width: 100%; }
 
   function buildPolygonControls(sel) {
     const fc = parseColor(sel.fill);
+    const HATCH = [["none","(ninguna)"],["diagonal","Diagonal ╱"],["diagonal2","Diagonal ╲"],["cross","Cruzada ╳"],["horizontal","Horizontal"],["vertical","Vertical"]];
     const wrap = el(`
       <div>
         ${colorField("Color de relleno", "pFillC", fc.hex, false)}
         <div class="field"><label>Opacidad del relleno: <span id="faVal">${Math.round(fc.alpha*100)}%</span></label>
           <input type="range" id="pFillA" min="0" max="1" step="0.05" value="${fc.alpha}" /></div>
+        <div class="divider"></div>
+        <div class="field"><label>Trama (hatch)</label>
+          <select id="pHatch">${HATCH.map(([v,l])=>`<option value="${v}" ${(sel.hatch||'none')===v?'selected':''}>${l}</option>`).join("")}</select></div>
+        ${colorField("Color de la trama", "pHatchC", parseColor(sel.hatchColor||'#d11111').hex, false)}
+        <div class="field"><label>Separación de la trama: <span id="hgVal">${sel.hatchGap||10}</span>px</label>
+          <input type="range" id="pHatchGap" min="4" max="40" value="${sel.hatchGap||10}" /></div>
+        <div class="divider"></div>
         ${colorField("Borde", "pStroke", parseColor(sel.stroke).hex, true, parseColor(sel.stroke).none)}
         <div class="field"><label>Grosor del borde: <span id="swVal">${sel.strokeWidth||2}</span>px</label>
           <input type="range" id="pStrokeW" min="0" max="20" value="${sel.strokeWidth||2}" /></div>
@@ -2272,6 +2431,13 @@ input[type="range"] { width: 100%; }
     function applyFill() { sel.fill = rgba(fcInp.value, parseFloat(faInp.value)); $("faVal").textContent = Math.round(faInp.value*100)+"%"; editor.render(); }
     fcInp.oninput = applyFill; fcInp.onchange = commit;
     faInp.oninput = applyFill; faInp.onchange = commit;
+    $("pHatch").onchange = (e) => { sel.hatch = e.target.value; editor.setStyle({ hatch: e.target.value }); editor.render(); commit(); };
+    const hc = $("pHatchC");
+    hc.oninput = () => { sel.hatchColor = hc.value; editor.setStyle({ hatchColor: hc.value }); editor.render(); };
+    hc.onchange = commit;
+    const hg = $("pHatchGap");
+    hg.oninput = () => { sel.hatchGap = parseInt(hg.value, 10); $("hgVal").textContent = sel.hatchGap; editor.render(); };
+    hg.onchange = commit;
     bindColorNone("pStroke", (v) => { sel.stroke = v; }, () => sel.stroke);
     const sw = $("pStrokeW");
     sw.oninput = () => { sel.strokeWidth = parseInt(sw.value, 10); $("swVal").textContent = sel.strokeWidth; editor.render(); };
@@ -2370,6 +2536,57 @@ input[type="range"] { width: 100%; }
     sz.onchange = commit;
   }
 
+  function buildIsobarControls(sel) {
+    const wrap = el(`
+      <div>
+        ${colorField("Color", "ibStroke", parseColor(sel.stroke).hex, false)}
+        <div class="field"><label>Grosor: <span id="ibwVal">${sel.strokeWidth||2}</span>px</label>
+          <input type="range" id="ibW" min="1" max="14" value="${sel.strokeWidth||2}" /></div>
+        <div class="field"><label>Valor / etiqueta (p. ej. 1012)</label><input type="text" id="ibLabel" value="${(sel.label||"").replace(/"/g,'&quot;')}" /></div>
+        <div class="field"><label>Tamaño de etiqueta: <span id="ibLsVal">${sel.labelSize||14}</span>px</label>
+          <input type="range" id="ibLs" min="8" max="48" value="${sel.labelSize||14}" /></div>
+        <div class="field"><label class="checkbox-row"><input type="checkbox" id="ibDash" ${sel.dash?'checked':''}/> Línea discontinua</label></div>
+        <div class="field"><label class="checkbox-row"><input type="checkbox" id="ibSmooth" ${sel.smooth!==false?'checked':''}/> Curva suavizada</label></div>
+        <div class="muted-note">Tira de los puntos para ajustar la curva. La etiqueta aparece en los extremos.</div>
+      </div>`);
+    panelBody.appendChild(wrap);
+    const sc = $("ibStroke");
+    sc.oninput = () => { sel.stroke = sc.value; editor.setStyle({ isobarColor: sc.value }); editor.render(); };
+    sc.onchange = commit;
+    const w = $("ibW");
+    w.oninput = () => { sel.strokeWidth = parseInt(w.value, 10); $("ibwVal").textContent = sel.strokeWidth; editor.render(); };
+    w.onchange = commit;
+    const lb = $("ibLabel");
+    lb.oninput = () => { sel.label = lb.value; editor.render(); };
+    lb.onchange = commit;
+    const ls = $("ibLs");
+    ls.oninput = () => { sel.labelSize = parseInt(ls.value, 10); $("ibLsVal").textContent = sel.labelSize; editor.render(); };
+    ls.onchange = commit;
+    $("ibDash").onchange = (e) => { sel.dash = e.target.checked; editor.render(); commit(); };
+    $("ibSmooth").onchange = (e) => { sel.smooth = e.target.checked; editor.render(); commit(); };
+  }
+
+  function buildWxSymbolControls(sel) {
+    const SYMS = [["thunderstorm","Tormenta (R)"],["tstorm-bolt","Tormenta (rayo)"],["rain","Lluvia"],["drizzle","Llovizna"],["showers","Chubascos"],["snow","Nieve"],["fog","Niebla"]];
+    const wrap = el(`
+      <div>
+        <div class="field"><label>Símbolo</label>
+          <select id="wxSym">${SYMS.map(([v,l])=>`<option value="${v}" ${sel.symbol===v?'selected':''}>${l}</option>`).join("")}</select></div>
+        ${colorField("Color", "wxColor", parseColor(sel.color).hex, false)}
+        <div class="field"><label>Tamaño: <span id="wxSzVal">${sel.size||48}</span>px</label>
+          <input type="range" id="wxSz" min="20" max="160" value="${sel.size||48}" /></div>
+        <div class="muted-note">El símbolo de tormenta (R) imita el de las cartas sinópticas. Por defecto en rojo.</div>
+      </div>`);
+    panelBody.appendChild(wrap);
+    $("wxSym").onchange = (e) => { sel.symbol = e.target.value; editor.setStyle({ wxSymbol: e.target.value }); editor.render(); commit(); };
+    const c = $("wxColor");
+    c.oninput = () => { sel.color = c.value; editor.setStyle({ wxColor: c.value }); editor.render(); };
+    c.onchange = commit;
+    const sz = $("wxSz");
+    sz.oninput = () => { sel.size = parseInt(sz.value, 10); $("wxSzVal").textContent = sel.size; editor.render(); };
+    sz.onchange = commit;
+  }
+
   function buildImageControls(sel) {
     const wrap = el(`<div class="muted-note">Imagen de fondo. Puedes moverla y redimensionarla con los tiradores. Carga una nueva imagen desde la barra superior para reemplazarla.</div>`);
     panelBody.appendChild(wrap);
@@ -2415,6 +2632,7 @@ input[type="range"] { width: 100%; }
       polygon: "Área / polígono", polyline: "Poli-línea", freehand: "Trazo libre",
       arrow: "Flecha", front: "Frente", image: "Imagen de fondo",
       station: "Estación meteorológica",
+      isobar: "Isobara", wxsymbol: "Símbolo de tiempo",
     })[t] || "Propiedades";
   }
 
@@ -2504,7 +2722,7 @@ input[type="range"] { width: 100%; }
     }
 
     // tool shortcuts
-    const map = { v: "select", t: "text", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse", s: "station" };
+    const map = { v: "select", t: "text", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse", s: "station", i: "isobar", k: "wxsymbol" };
     if (map[e.key.toLowerCase()] && !e.ctrlKey && !e.metaKey) {
       editor.setTool(map[e.key.toLowerCase()]);
       selectToolBtn(map[e.key.toLowerCase()]);

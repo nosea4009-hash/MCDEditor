@@ -81,6 +81,8 @@
     ellipse: "Arrastra para dibujar una elipse. Shift = círculo.",
     front: "Clic para añadir puntos del frente. Doble clic o Enter para terminar. Usa 'Voltear lado' para cambiar la dirección de los símbolos.",
     station: "Clic para colocar un modelo de estación. Luego edita viento, T, Td, presión y cielo en el panel de la derecha.",
+    isobar: "Clic para añadir puntos de la isobara. Doble clic o Enter para terminar. Elige color y escribe el valor (p. ej. 1012) en el panel.",
+    wxsymbol: "Clic para colocar un símbolo de tiempo (tormenta 'R', lluvia, nieve…). Cambia tipo, color y tamaño en el panel.",
   };
   function updateToolHint(tool, front) {
     let h = HINTS[tool] || "";
@@ -348,7 +350,9 @@
     else if (sel.type === "polyline" || sel.type === "freehand") buildLineControls(sel, false);
     else if (sel.type === "arrow") buildLineControls(sel, true);
     else if (sel.type === "front") buildFrontControls(sel);
+    else if (sel.type === "isobar") buildIsobarControls(sel);
     else if (sel.type === "station") buildStationControls(sel);
+    else if (sel.type === "wxsymbol") buildWxSymbolControls(sel);
     else if (sel.type === "image") buildImageControls(sel);
 
     // ---- opacity (all) ----
@@ -467,11 +471,19 @@
 
   function buildPolygonControls(sel) {
     const fc = parseColor(sel.fill);
+    const HATCH = [["none","(ninguna)"],["diagonal","Diagonal ╱"],["diagonal2","Diagonal ╲"],["cross","Cruzada ╳"],["horizontal","Horizontal"],["vertical","Vertical"]];
     const wrap = el(`
       <div>
         ${colorField("Color de relleno", "pFillC", fc.hex, false)}
         <div class="field"><label>Opacidad del relleno: <span id="faVal">${Math.round(fc.alpha*100)}%</span></label>
           <input type="range" id="pFillA" min="0" max="1" step="0.05" value="${fc.alpha}" /></div>
+        <div class="divider"></div>
+        <div class="field"><label>Trama (hatch)</label>
+          <select id="pHatch">${HATCH.map(([v,l])=>`<option value="${v}" ${(sel.hatch||'none')===v?'selected':''}>${l}</option>`).join("")}</select></div>
+        ${colorField("Color de la trama", "pHatchC", parseColor(sel.hatchColor||'#d11111').hex, false)}
+        <div class="field"><label>Separación de la trama: <span id="hgVal">${sel.hatchGap||10}</span>px</label>
+          <input type="range" id="pHatchGap" min="4" max="40" value="${sel.hatchGap||10}" /></div>
+        <div class="divider"></div>
         ${colorField("Borde", "pStroke", parseColor(sel.stroke).hex, true, parseColor(sel.stroke).none)}
         <div class="field"><label>Grosor del borde: <span id="swVal">${sel.strokeWidth||2}</span>px</label>
           <input type="range" id="pStrokeW" min="0" max="20" value="${sel.strokeWidth||2}" /></div>
@@ -482,6 +494,13 @@
     function applyFill() { sel.fill = rgba(fcInp.value, parseFloat(faInp.value)); $("faVal").textContent = Math.round(faInp.value*100)+"%"; editor.render(); }
     fcInp.oninput = applyFill; fcInp.onchange = commit;
     faInp.oninput = applyFill; faInp.onchange = commit;
+    $("pHatch").onchange = (e) => { sel.hatch = e.target.value; editor.setStyle({ hatch: e.target.value }); editor.render(); commit(); };
+    const hc = $("pHatchC");
+    hc.oninput = () => { sel.hatchColor = hc.value; editor.setStyle({ hatchColor: hc.value }); editor.render(); };
+    hc.onchange = commit;
+    const hg = $("pHatchGap");
+    hg.oninput = () => { sel.hatchGap = parseInt(hg.value, 10); $("hgVal").textContent = sel.hatchGap; editor.render(); };
+    hg.onchange = commit;
     bindColorNone("pStroke", (v) => { sel.stroke = v; }, () => sel.stroke);
     const sw = $("pStrokeW");
     sw.oninput = () => { sel.strokeWidth = parseInt(sw.value, 10); $("swVal").textContent = sel.strokeWidth; editor.render(); };
@@ -580,6 +599,57 @@
     sz.onchange = commit;
   }
 
+  function buildIsobarControls(sel) {
+    const wrap = el(`
+      <div>
+        ${colorField("Color", "ibStroke", parseColor(sel.stroke).hex, false)}
+        <div class="field"><label>Grosor: <span id="ibwVal">${sel.strokeWidth||2}</span>px</label>
+          <input type="range" id="ibW" min="1" max="14" value="${sel.strokeWidth||2}" /></div>
+        <div class="field"><label>Valor / etiqueta (p. ej. 1012)</label><input type="text" id="ibLabel" value="${(sel.label||"").replace(/"/g,'&quot;')}" /></div>
+        <div class="field"><label>Tamaño de etiqueta: <span id="ibLsVal">${sel.labelSize||14}</span>px</label>
+          <input type="range" id="ibLs" min="8" max="48" value="${sel.labelSize||14}" /></div>
+        <div class="field"><label class="checkbox-row"><input type="checkbox" id="ibDash" ${sel.dash?'checked':''}/> Línea discontinua</label></div>
+        <div class="field"><label class="checkbox-row"><input type="checkbox" id="ibSmooth" ${sel.smooth!==false?'checked':''}/> Curva suavizada</label></div>
+        <div class="muted-note">Tira de los puntos para ajustar la curva. La etiqueta aparece en los extremos.</div>
+      </div>`);
+    panelBody.appendChild(wrap);
+    const sc = $("ibStroke");
+    sc.oninput = () => { sel.stroke = sc.value; editor.setStyle({ isobarColor: sc.value }); editor.render(); };
+    sc.onchange = commit;
+    const w = $("ibW");
+    w.oninput = () => { sel.strokeWidth = parseInt(w.value, 10); $("ibwVal").textContent = sel.strokeWidth; editor.render(); };
+    w.onchange = commit;
+    const lb = $("ibLabel");
+    lb.oninput = () => { sel.label = lb.value; editor.render(); };
+    lb.onchange = commit;
+    const ls = $("ibLs");
+    ls.oninput = () => { sel.labelSize = parseInt(ls.value, 10); $("ibLsVal").textContent = sel.labelSize; editor.render(); };
+    ls.onchange = commit;
+    $("ibDash").onchange = (e) => { sel.dash = e.target.checked; editor.render(); commit(); };
+    $("ibSmooth").onchange = (e) => { sel.smooth = e.target.checked; editor.render(); commit(); };
+  }
+
+  function buildWxSymbolControls(sel) {
+    const SYMS = [["thunderstorm","Tormenta (R)"],["tstorm-bolt","Tormenta (rayo)"],["rain","Lluvia"],["drizzle","Llovizna"],["showers","Chubascos"],["snow","Nieve"],["fog","Niebla"]];
+    const wrap = el(`
+      <div>
+        <div class="field"><label>Símbolo</label>
+          <select id="wxSym">${SYMS.map(([v,l])=>`<option value="${v}" ${sel.symbol===v?'selected':''}>${l}</option>`).join("")}</select></div>
+        ${colorField("Color", "wxColor", parseColor(sel.color).hex, false)}
+        <div class="field"><label>Tamaño: <span id="wxSzVal">${sel.size||48}</span>px</label>
+          <input type="range" id="wxSz" min="20" max="160" value="${sel.size||48}" /></div>
+        <div class="muted-note">El símbolo de tormenta (R) imita el de las cartas sinópticas. Por defecto en rojo.</div>
+      </div>`);
+    panelBody.appendChild(wrap);
+    $("wxSym").onchange = (e) => { sel.symbol = e.target.value; editor.setStyle({ wxSymbol: e.target.value }); editor.render(); commit(); };
+    const c = $("wxColor");
+    c.oninput = () => { sel.color = c.value; editor.setStyle({ wxColor: c.value }); editor.render(); };
+    c.onchange = commit;
+    const sz = $("wxSz");
+    sz.oninput = () => { sel.size = parseInt(sz.value, 10); $("wxSzVal").textContent = sel.size; editor.render(); };
+    sz.onchange = commit;
+  }
+
   function buildImageControls(sel) {
     const wrap = el(`<div class="muted-note">Imagen de fondo. Puedes moverla y redimensionarla con los tiradores. Carga una nueva imagen desde la barra superior para reemplazarla.</div>`);
     panelBody.appendChild(wrap);
@@ -625,6 +695,7 @@
       polygon: "Área / polígono", polyline: "Poli-línea", freehand: "Trazo libre",
       arrow: "Flecha", front: "Frente", image: "Imagen de fondo",
       station: "Estación meteorológica",
+      isobar: "Isobara", wxsymbol: "Símbolo de tiempo",
     })[t] || "Propiedades";
   }
 
@@ -714,7 +785,7 @@
     }
 
     // tool shortcuts
-    const map = { v: "select", t: "text", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse", s: "station" };
+    const map = { v: "select", t: "text", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse", s: "station", i: "isobar", k: "wxsymbol" };
     if (map[e.key.toLowerCase()] && !e.ctrlKey && !e.metaKey) {
       editor.setTool(map[e.key.toLowerCase()]);
       selectToolBtn(map[e.key.toLowerCase()]);

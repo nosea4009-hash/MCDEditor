@@ -295,7 +295,7 @@
         ctx.lineWidth = 1.5 / this._screenScale;
         ctx.stroke();
       }
-    } else if (s.type !== "station") {
+    } else if (s.type !== "station" && s.type !== "wxsymbol") {
       for (const h of this._handleRects(s)) {        ctx.beginPath();
         ctx.rect(h.x - h.r, h.y - h.r, h.r * 2, h.r * 2);
         ctx.fillStyle = "#ffffff";
@@ -324,7 +324,7 @@
       }
       return null;
     }
-    if (s.type === "station") return null;
+    if (s.type === "station" || s.type === "wxsymbol") return null;
     for (const h of this._handleRects(s)) {
       if (Math.abs(p.x - h.x) <= tol && Math.abs(p.y - h.y) <= tol) return { handle: h.name };
     }
@@ -347,7 +347,7 @@
     const tool = this.tool;
 
     // multi-point tools accumulate via clicks
-    if (["polyline", "polygon", "front"].includes(tool)) {
+    if (["polyline", "polygon", "front", "isobar"].includes(tool)) {
       if (!this.draft) {
         this.draft = Shapes.create(tool, this.style);
         this.draft.points = [];
@@ -412,6 +412,18 @@
 
     if (tool === "station") {
       const s = Shapes.create("station", this.style);
+      s.x = p.x; s.y = p.y;
+      this.objects.push(s);
+      this.selectedId = s.id;
+      this.pushHistory();
+      this.render();
+      this._emitChange();
+      this.setTool("select");
+      return;
+    }
+
+    if (tool === "wxsymbol") {
+      const s = Shapes.create("wxsymbol", this.style);
       s.x = p.x; s.y = p.y;
       this.objects.push(s);
       this.selectedId = s.id;

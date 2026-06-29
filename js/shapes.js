@@ -48,7 +48,7 @@
   }
   Shapes.normBox = normBox;
 
-  const POINT_TYPES = ["arrow", "polyline", "freehand", "polygon", "front"];
+  const POINT_TYPES = ["arrow", "polyline", "freehand", "polygon", "front", "isobar"];
   Shapes.isPointBased = (s) => POINT_TYPES.includes(s.type);
 
   // ---- bounds ----
@@ -68,6 +68,10 @@
     if (s.type === "station") {
       const size = s.size || 72;
       return { x: s.x - size, y: s.y - size, w: size * 2, h: size * 2 };
+    }
+    if (s.type === "wxsymbol") {
+      const h = (s.size || 48) * 0.6;
+      return { x: s.x - h, y: s.y - h, w: h * 2, h: h * 2 };
     }
     return normBox(s);
   };
@@ -119,7 +123,16 @@
         const fine = Geo.smoothPath(s.points, 0.5);
         return Geo.pointPolylineDistance(p, fine) <= (s.lineWidth || 4) + tol + 6;
       }
+      case "isobar": {
+        if (!s.points || s.points.length < 2) return false;
+        const fine = s.smooth === false ? s.points : Geo.smoothPath(s.points, 0.5);
+        return Geo.pointPolylineDistance(p, fine) <= (s.strokeWidth || 2) + tol + 4;
+      }
       case "station": {
+        const b = Shapes.bounds(s);
+        return p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+      }
+      case "wxsymbol": {
         const b = Shapes.bounds(s);
         return p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
       }
@@ -275,6 +288,71 @@
   }
   Shapes.drawStation = drawStation;
 
+  // ---- hatch fill (caller must set the clip path first) ----
+  function drawHatch(ctx, b, style, gap, color, width) {
+    gap = Math.max(3, gap || 10);
+    ctx.save();
+    ctx.strokeStyle = color || "#d11111";
+    ctx.lineWidth = width || 1.5;
+    ctx.beginPath();
+    const x = b.x, y = b.y, x1 = b.x + b.w, y1 = b.y + b.h, w = b.w, h = b.h;
+    const diag = (sign) => {
+      for (let d = -h; d <= w; d += gap) {
+        if (sign > 0) { ctx.moveTo(x + d, y1); ctx.lineTo(x + d + h, y1 - h); }
+        else { ctx.moveTo(x + d, y); ctx.lineTo(x + d + h, y + h); }
+      }
+    };
+    if (style === "horizontal") { for (let yy = y; yy <= y1; yy += gap) { ctx.moveTo(x, yy); ctx.lineTo(x1, yy); } }
+    else if (style === "vertical") { for (let xx = x; xx <= x1; xx += gap) { ctx.moveTo(xx, y); ctx.lineTo(xx, y1); } }
+    else if (style === "diagonal") { diag(1); }
+    else if (style === "diagonal2") { diag(-1); }
+    else if (style === "cross") { diag(1); diag(-1); }
+    ctx.stroke();
+    ctx.restore();
+  }
+  Shapes.drawHatch = drawHatch;
+
+  // ---- synoptic thunderstorm symbol (R-shape with lightning arrow) ----
+  function drawThunderstormR(ctx, cx, cy, sz, color) {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(2, sz * 0.1);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    const x0 = cx - sz * 0.28;
+    const top = cy - sz * 0.5, bot = cy + sz * 0.5, mid = cy;
+    // stem
+    ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0, bot); ctx.stroke();
+    // bowl (top half of the R)
+    ctx.beginPath();
+    ctx.moveTo(x0, top);
+    ctx.lineTo(cx + sz * 0.05, top);
+    ctx.quadraticCurveTo(cx + sz * 0.32, top, cx + sz * 0.32, (top + mid) / 2);
+    ctx.quadraticCurveTo(cx + sz * 0.32, mid, cx + sz * 0.05, mid);
+    ctx.lineTo(x0, mid);
+    ctx.stroke();
+    // leg
+    ctx.beginPath(); ctx.moveTo(cx + sz * 0.02, mid); ctx.lineTo(cx + sz * 0.30, bot); ctx.stroke();
+    // lightning arrowhead at the leg tip (points down)
+    const ax = cx + sz * 0.30, ay = bot;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay); ctx.lineTo(ax - sz * 0.16, ay - sz * 0.03);
+    ctx.moveTo(ax, ay); ctx.lineTo(ax - sz * 0.03, ay - sz * 0.18);
+    ctx.stroke();
+    ctx.restore();
+  }
+  Shapes.drawThunderstormR = drawThunderstormR;
+
+  // ---- standalone weather symbol ----
+  function drawWxSymbol(ctx, s) {
+    const sz = s.size || 48;
+    const color = s.color || "#d11111";
+    const code = s.symbol || "thunderstorm";
+    if (code === "thunderstorm") { drawThunderstormR(ctx, s.x, s.y, sz, color); return; }
+    if (code === "tstorm-bolt") { drawPresentWx(ctx, s.x, s.y, sz, "tstorm", color); return; }
+    drawPresentWx(ctx, s.x, s.y, sz, code, color);
+  }
+  Shapes.drawWxSymbol = drawWxSymbol;
+
   // ---- rendering ----
   Shapes.draw = function (ctx, s) {
     ctx.save();
@@ -353,12 +431,22 @@
       }
       case "polygon": {
         if (!s.points || s.points.length < 2) break;
-        ctx.beginPath();
-        ctx.moveTo(s.points[0].x, s.points[0].y);
-        for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
-        ctx.closePath();
+        const poly = () => {
+          ctx.beginPath();
+          ctx.moveTo(s.points[0].x, s.points[0].y);
+          for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
+          ctx.closePath();
+        };
+        poly();
         if (s.fill && s.fill !== "none") { ctx.fillStyle = s.fill; ctx.fill(); }
+        if (s.hatch && s.hatch !== "none") {
+          ctx.save();
+          poly(); ctx.clip();
+          drawHatch(ctx, Geo.bbox(s.points), s.hatch, s.hatchGap, s.hatchColor, s.hatchWidth);
+          ctx.restore();
+        }
         if (s.stroke && s.stroke !== "none") {
+          poly();
           ctx.strokeStyle = s.stroke; ctx.lineWidth = s.strokeWidth || 2;
           ctx.setLineDash(s.dash || []);
           ctx.stroke();
@@ -410,6 +498,39 @@
         drawStation(ctx, s);
         break;
       }
+      case "isobar": {
+        if (!s.points || s.points.length < 2) break;
+        const fine = s.smooth === false ? s.points : Geo.smoothPath(s.points, 0.5);
+        ctx.beginPath();
+        ctx.moveTo(fine[0].x, fine[0].y);
+        for (let i = 1; i < fine.length; i++) ctx.lineTo(fine[i].x, fine[i].y);
+        ctx.strokeStyle = s.stroke || "#333333";
+        ctx.lineWidth = s.strokeWidth || 2;
+        ctx.lineJoin = "round"; ctx.lineCap = "round";
+        const lw = s.strokeWidth || 2;
+        ctx.setLineDash(s.dash ? [Math.max(8, lw * 3), lw * 2] : []);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (s.label != null && String(s.label) !== "") {
+          const ls = s.labelSize || 14;
+          ctx.font = `bold ${ls}px Arial`;
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.lineJoin = "round";
+          const ends = [fine[0], fine[fine.length - 1]];
+          for (const pt of ends) {
+            ctx.lineWidth = Math.max(3, ls * 0.28);
+            ctx.strokeStyle = "#ffffff";
+            ctx.strokeText(String(s.label), pt.x, pt.y);
+            ctx.fillStyle = s.stroke || "#333333";
+            ctx.fillText(String(s.label), pt.x, pt.y);
+          }
+        }
+        break;
+      }
+      case "wxsymbol": {
+        drawWxSymbol(ctx, s);
+        break;
+      }
     }
     ctx.restore();
   };
@@ -453,6 +574,8 @@
           points: [],
           fill: "rgba(255,210,0,0.18)", stroke: style.stroke || "#d11", strokeWidth: style.strokeWidth || 3,
           dash: [],
+          hatch: style.hatch || "none", hatchColor: style.hatchColor || "#d11111",
+          hatchGap: style.hatchGap || 10, hatchWidth: style.hatchWidth || 1.5,
         });
       case "polyline":
         return Object.assign(base, {
@@ -479,6 +602,16 @@
           windDir: 320, windSpeed: 15,
           hemisphere: style.hemisphere || "S",
           color: "#111111",
+        });
+      case "isobar":
+        return Object.assign(base, {
+          points: [], stroke: style.isobarColor || "#7a4a00", strokeWidth: style.strokeWidth || 2,
+          dash: false, smooth: true, label: "", labelSize: 14,
+        });
+      case "wxsymbol":
+        return Object.assign(base, {
+          x: 0, y: 0, symbol: style.wxSymbol || "thunderstorm",
+          size: style.wxSize || 48, color: style.wxColor || "#d11111",
         });
       default:
         return base;
