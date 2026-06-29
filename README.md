@@ -6,6 +6,13 @@ discusiones de mesoescala al estilo de las **MCD del SPC** (Storm Prediction Cen
 Cargas una imagen de radar o satélite y la anotas con frentes meteorológicos, flechas,
 poli-líneas, cajas de texto con borde rojo, áreas resaltadas y más.
 
+> ### 🌩️ Editor de Outlooks (Argentina &amp; Paraguay)
+> Este repositorio también incluye, en la carpeta **[`trp-outlook/`](trp-outlook/)**, una
+> herramienta para dibujar **outlooks categóricos de tiempo severo** estilo SPC
+> (TSTM/MRGL/SLGT/ENH/MDT/HIGH) **restringidos a Argentina y Paraguay**, con mapa
+> personalizable, leyenda e import/export GeoJSON. Ver
+> [`trp-outlook/README.md`](trp-outlook/README.md).
+
 ---
 
 ## Cómo ejecutarlo

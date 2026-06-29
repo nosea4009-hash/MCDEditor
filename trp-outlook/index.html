@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TRP Meteorología — Sección Pronóstico</title>
+
+  <!-- Leaflet (CDN). Se cachea en el navegador tras la primera carga. -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- ====================== ENCABEZADO ====================== -->
+  <header id="appHeader">
+    <div class="brand">
+      <div class="brand-mark">TRP</div>
+      <div class="brand-text">
+        <h1>TRP Meteorología <span class="sep">—</span> Sección Pronóstico</h1>
+        <p id="headerSubtitle">Outlooks de tiempo severo · Argentina &amp; Paraguay</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span id="dataStatus" class="badge badge-muted" title="Estado de los datos geográficos">Cargando datos…</span>
+      <button id="toggleSidebarBtn" class="btn btn-ghost" title="Mostrar/ocultar panel">☰ Panel</button>
+    </div>
+  </header>
+
+  <!-- ====================== CUERPO ====================== -->
+  <div id="layout">
+    <!-- -------- BARRA LATERAL DE CONTROLES -------- -->
+    <aside id="sidebar">
+
+      <!-- Herramientas de pronóstico -->
+      <section class="panel" data-panel="tools">
+        <h2 class="panel-title"><span>🛰️ Herramientas de pronóstico</span><span class="chev">▾</span></h2>
+        <div class="panel-body">
+          <label class="field-label">Nivel de riesgo activo</label>
+          <div id="levelButtons" class="level-buttons"><!-- generado por JS --></div>
+
+          <div class="btn-row">
+            <button id="drawBtn" class="btn btn-primary">✏️ Dibujar área</button>
+            <button id="finishBtn" class="btn" disabled>✓ Finalizar</button>
+          </div>
+          <div class="btn-row">
+            <button id="undoPointBtn" class="btn btn-sm" disabled>↶ Quitar punto</button>
+            <button id="undoPolyBtn" class="btn btn-sm">⤺ Deshacer área</button>
+          </div>
+          <div class="btn-row">
+            <button id="deleteSelBtn" class="btn btn-sm btn-warn" disabled>🗑 Borrar seleccionada</button>
+            <button id="clearAllBtn" class="btn btn-sm btn-warn">🧹 Limpiar todo</button>
+          </div>
+          <p class="hint" id="drawHint">Elegí un nivel, tocá <b>Dibujar área</b> y hacé clic en el mapa para marcar el contorno. Doble clic o <b>Finalizar</b> para cerrar. Las áreas se recortan automáticamente a Argentina y Paraguay.</p>
+
+          <div class="selected-box" id="selectedBox" hidden>
+            <label class="field-label">Área seleccionada — cambiar nivel</label>
+            <select id="selectedLevel" class="select"></select>
+          </div>
+        </div>
+      </section>
+
+      <!-- Mapa base -->
+      <section class="panel" data-panel="basemap">
+        <h2 class="panel-title"><span>🗺️ Tipo de mapa</span><span class="chev">▾</span></h2>
+        <div class="panel-body">
+          <label class="field-label" for="basemapSelect">Mapa base</label>
+          <select id="basemapSelect" class="select">
+            <option value="vector">Vectorial personalizado (offline)</option>
+            <option value="osm">OpenStreetMap</option>
+            <option value="topo">Topográfico</option>
+            <option value="satellite">Satélite</option>
+            <option value="dark">Oscuro</option>
+            <option value="light">Claro / Positron</option>
+          </select>
+          <p class="hint">El modo <b>Vectorial personalizado</b> permite cambiar todos los colores y funciona sin conexión.</p>
+        </div>
+      </section>
+
+      <!-- Personalización del mapa vectorial -->
+      <section class="panel" data-panel="style">
+        <h2 class="panel-title"><span>🎨 Personalización del mapa</span><span class="chev">▾</span></h2>
+        <div class="panel-body">
+          <div class="ctl"><label>Color del agua</label><input type="color" id="waterColor" /></div>
+          <div class="ctl"><label>Color del terreno (AR/PY)</label><input type="color" id="landColor" /></div>
+          <div class="ctl"><label>Color países vecinos</label><input type="color" id="neighborColor" /></div>
+
+          <div class="ctl"><label>Color de fronteras</label><input type="color" id="borderColor" /></div>
+          <div class="ctl"><label>Grosor de fronteras</label><input type="range" id="borderWidth" min="0.2" max="5" step="0.1" /><span class="val" id="borderWidthVal"></span></div>
+
+          <hr class="div" />
+          <div class="ctl"><label><input type="checkbox" id="showProvinces" /> Mostrar provincias</label></div>
+          <div class="ctl"><label>Color provincias</label><input type="color" id="provinceColor" /></div>
+          <div class="ctl"><label>Grosor provincias</label><input type="range" id="provinceWidth" min="0.1" max="3" step="0.1" /><span class="val" id="provinceWidthVal"></span></div>
+
+          <hr class="div" />
+          <div class="ctl"><label><input type="checkbox" id="showCities" /> Mostrar ciudades</label></div>
+          <div class="ctl"><label>Nivel de detalle de ciudades</label>
+            <select id="cityRank" class="select select-sm">
+              <option value="1">Solo capitales nacionales</option>
+              <option value="2">Capitales y principales</option>
+              <option value="3">Todas</option>
+            </select>
+          </div>
+          <div class="ctl"><label><input type="checkbox" id="showCityLabels" /> Etiquetas de ciudades</label></div>
+          <div class="ctl"><label>Color punto ciudad</label><input type="color" id="cityDotColor" /></div>
+          <div class="ctl"><label>Color etiqueta ciudad</label><input type="color" id="cityLabelColor" /></div>
+          <div class="ctl"><label>Tamaño etiqueta</label><input type="range" id="cityLabelSize" min="8" max="18" step="1" /><span class="val" id="cityLabelSizeVal"></span></div>
+
+          <hr class="div" />
+          <div class="ctl"><label><input type="checkbox" id="showCountryLabels" /> Etiquetas de países</label></div>
+          <div class="ctl"><label><input type="checkbox" id="showGraticule" /> Cuadrícula (lat/lon)</label></div>
+          <div class="ctl"><label>Color cuadrícula</label><input type="color" id="graticuleColor" /></div>
+          <div class="ctl"><label>Separación cuadrícula (°)</label>
+            <select id="graticuleStep" class="select select-sm">
+              <option value="2">2°</option><option value="5">5°</option><option value="10">10°</option>
+            </select>
+          </div>
+
+          <hr class="div" />
+          <label class="field-label">Temas rápidos</label>
+          <div class="btn-row">
+            <button class="btn btn-sm theme-btn" data-theme="classic">Clásico</button>
+            <button class="btn btn-sm theme-btn" data-theme="dark">Oscuro</button>
+            <button class="btn btn-sm theme-btn" data-theme="blueprint">Blueprint</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Colores de alerta SPC -->
+      <section class="panel" data-panel="colors">
+        <h2 class="panel-title"><span>⚠️ Colores de alerta (SPC)</span><span class="chev">▾</span></h2>
+        <div class="panel-body">
+          <div class="ctl"><label>Opacidad del relleno</label><input type="range" id="fillOpacity" min="0.1" max="1" step="0.05" /><span class="val" id="fillOpacityVal"></span></div>
+          <div class="ctl"><label>Grosor del contorno</label><input type="range" id="outlookStroke" min="0.5" max="5" step="0.5" /><span class="val" id="outlookStrokeVal"></span></div>
+          <div id="levelColorControls"><!-- generado por JS --></div>
+          <div class="btn-row">
+            <button id="presetVivid" class="btn btn-sm">Preset vívido (barra)</button>
+            <button id="presetOfficial" class="btn btn-sm">Preset relleno oficial</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Leyenda -->
+      <section class="panel" data-panel="legend">
+        <h2 class="panel-title"><span>🏷️ Leyenda</span><span class="chev">▾</span></h2>
+        <div class="panel-body">
+          <div class="ctl"><label><input type="checkbox" id="showLegend" /> Mostrar leyenda en el mapa</label></div>
+          <div class="ctl"><label>Posición</label>
+            <select id="legendPos" class="select select-sm">
+              <option value="bottomleft">Abajo izquierda</option>
+              <option value="bottomright">Abajo derecha</option>
+              <option value="topleft">Arriba izquierda</option>
+              <option value="topright">Arriba derecha</option>
+            </select>
+          </div>
+          <div class="ctl"><label><input type="checkbox" id="legendOnlyUsed" /> Mostrar solo niveles dibujados</label></div>
+          <div class="ctl"><label>Título de la leyenda</label><input type="text" id="legendTitle" class="text-input" /></div>
+        </div>
+      </section>
+
+      <!-- Encabezado del outlook -->
+      <section class="panel" data-panel="outlook">
+        <h2 class="panel-title"><span>📰 Encabezado del outlook</span><span class="chev">▾</span></h2>
+        <div class="panel-body">
+          <div class="ctl"><label><input type="checkbox" id="showOutlookHeader" /> Mostrar encabezado sobre el mapa</label></div>
+          <div class="ctl"><label>Título</label><input type="text" id="outlookTitle" class="text-input" /></div>
+          <div class="ctl"><label>Válido (texto)</label><input type="text" id="outlookValid" class="text-input" /></div>
+        </div>
+      </section>
+
+      <!-- Datos y capas -->
+      <section class="panel" data-panel="data">
+        <h2 class="panel-title"><span>💾 Datos &amp; archivos</span><span class="chev">▾</span></h2>
+        <div class="panel-body">
+          <label class="field-label">Provincias / límites (GeoJSON)</label>
+          <input type="file" id="provinceFile" accept=".geojson,.json" class="file-input" />
+          <p class="hint">Opcional: cargá un GeoJSON de provincias/departamentos para mostrarlas.</p>
+
+          <hr class="div" />
+          <div class="btn-row">
+            <button id="exportOutlookBtn" class="btn btn-sm">⬇ Exportar outlook</button>
+            <label class="btn btn-sm file-label">⬆ Importar outlook<input type="file" id="importOutlookFile" accept=".geojson,.json" hidden /></label>
+          </div>
+          <div class="btn-row">
+            <button id="exportSettingsBtn" class="btn btn-sm">⬇ Exportar config</button>
+            <label class="btn btn-sm file-label">⬆ Importar config<input type="file" id="importSettingsFile" accept=".json" hidden /></label>
+          </div>
+          <hr class="div" />
+          <div class="btn-row">
+            <button id="reloadDataBtn" class="btn btn-sm">🔄 Recargar mapa base</button>
+            <button id="clearCacheBtn" class="btn btn-sm btn-warn">Borrar caché</button>
+          </div>
+          <button id="resetAllBtn" class="btn btn-sm btn-warn" style="width:100%;margin-top:6px;">Restablecer todo</button>
+        </div>
+      </section>
+
+      <footer class="sidebar-footer">TRP Meteorología · Herramienta local de pronóstico</footer>
+    </aside>
+
+    <!-- -------- MAPA -------- -->
+    <main id="mapWrap">
+      <div id="map"></div>
+
+      <!-- Encabezado del outlook sobre el mapa -->
+      <div id="outlookHeaderOverlay" class="map-overlay" hidden>
+        <div class="oh-title" id="ohTitle"></div>
+        <div class="oh-valid" id="ohValid"></div>
+      </div>
+
+      <!-- Barra de estado / coordenadas -->
+      <div id="statusBar">
+        <span id="coordReadout">lat —, lon —</span>
+        <span id="drawState" class="draw-state"></span>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast de avisos -->
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- Librerías y scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+  <script src="js/topojson-mini.js"></script>
+  <script src="js/citydata.js"></script>
+  <script src="js/fallback-geo.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
