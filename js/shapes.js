@@ -420,7 +420,7 @@
         const lines = String(s.text || "").split("\n");
         const lh = (s.fontSize || 18) * 1.25;
         let tx = s.x;
-        if (s.haloColor) {
+        if (s.haloColor && (s.haloWidth || 0) > 0) {
           ctx.lineWidth = (s.haloWidth || 3);
           ctx.strokeStyle = s.haloColor;
           ctx.lineJoin = "round";

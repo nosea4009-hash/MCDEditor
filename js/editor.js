@@ -410,6 +410,26 @@
       return;
     }
 
+    if (tool === "citylabel") {
+      const s = Shapes.create("text", this.style);
+      Object.assign(s, {
+        x: p.x, y: p.y, text: "Ciudad",
+        fontFamily: "Open Sans", bold: true,
+        fontSize: this.style.fontSize || 22,
+        color: this.style.textColor || "#111111",
+        align: "center",
+        haloColor: "#ffffff", haloWidth: 4,
+      });
+      this.objects.push(s);
+      this.selectedId = s.id;
+      this.pushHistory();
+      this.render();
+      this._emitChange();
+      this.setTool("select");
+      if (this.onEditText) this.onEditText(s);
+      return;
+    }
+
     if (tool === "station") {
       const s = Shapes.create("station", this.style);
       s.x = p.x; s.y = p.y;

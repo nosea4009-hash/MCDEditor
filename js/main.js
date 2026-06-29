@@ -17,7 +17,7 @@
   const canvasScroll = $("canvasScroll");
 
   const FONTS = [
-    "Arial", "Helvetica", "Verdana", "Tahoma", "Trebuchet MS",
+    "Open Sans", "Arial", "Helvetica", "Verdana", "Tahoma", "Trebuchet MS",
     "Segoe UI", "Calibri", "Times New Roman", "Georgia",
     "Courier New", "Consolas", "Impact", "Comic Sans MS",
   ];
@@ -72,6 +72,7 @@
   const HINTS = {
     select: "Clic para seleccionar. Arrastra para mover. Tira de los puntos/tiradores para ajustar. Doble clic en un texto para editarlo.",
     text: "Clic en el lienzo para colocar texto. Se abrirá el editor.",
+    citylabel: "Clic para colocar una etiqueta de ciudad (Open Sans Bold). Edita el texto, y cambia el color y el contorno en el panel de la derecha.",
     "place-textbox": "Clic para colocar una caja blanca con borde (estilo número MCD). Doble clic para editar su texto.",
     arrow: "Arrastra para dibujar una flecha. Mantén Shift para ángulos de 45°.",
     polyline: "Clic para añadir puntos. Doble clic o Enter para terminar. Esc cancela.",
@@ -410,7 +411,8 @@
         ${isBox ? colorField("Relleno de la caja", "pFill", parseColor(sel.fill).hex, true, parseColor(sel.fill).none) : ""}
         ${isBox ? colorField("Borde de la caja", "pStroke", parseColor(sel.stroke).hex, true, parseColor(sel.stroke).none) : ""}
         ${isBox ? `<div class="field"><label>Grosor del borde: <span id="bwVal">${sel.strokeWidth||3}</span>px</label><input type="range" id="pStrokeW" min="0" max="20" value="${sel.strokeWidth||3}" /></div>` : ""}
-        ${!isBox ? `<div class="field"><label class="checkbox-row"><input type="checkbox" id="pHalo" ${sel.haloColor?'checked':''}/> Halo blanco (legibilidad)</label></div>` : ""}
+        ${!isBox ? colorField("Color del contorno", "pHaloColor", parseColor(sel.haloColor || "#ffffff").hex, false) : ""}
+        ${!isBox ? `<div class="field"><label>Grosor del contorno: <span id="hwVal">${sel.haloWidth||0}</span>px</label><input type="range" id="pHaloW" min="0" max="14" value="${sel.haloWidth||0}" /></div>` : ""}
       </div>`);
     panelBody.appendChild(wrap);
 
@@ -436,7 +438,21 @@
       sw.oninput = () => { sel.strokeWidth = parseInt(sw.value, 10); $("bwVal").textContent = sel.strokeWidth; editor.render(); };
       sw.onchange = commit;
     } else {
-      $("pHalo").onchange = (e) => { sel.haloColor = e.target.checked ? "#ffffff" : null; editor.render(); commit(); };
+      const hc = $("pHaloColor");
+      hc.oninput = () => {
+        sel.haloColor = hc.value;
+        if (!(sel.haloWidth > 0)) { sel.haloWidth = 4; const hw = $("pHaloW"); hw.value = 4; $("hwVal").textContent = 4; }
+        editor.render();
+      };
+      hc.onchange = commit;
+      const hw = $("pHaloW");
+      hw.oninput = () => {
+        sel.haloWidth = parseInt(hw.value, 10);
+        $("hwVal").textContent = sel.haloWidth;
+        if (sel.haloWidth > 0 && !sel.haloColor) sel.haloColor = hc.value;
+        editor.render();
+      };
+      hw.onchange = commit;
     }
   }
 
@@ -785,7 +801,7 @@
     }
 
     // tool shortcuts
-    const map = { v: "select", t: "text", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse", s: "station", i: "isobar", k: "wxsymbol" };
+    const map = { v: "select", t: "text", c: "citylabel", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse", s: "station", i: "isobar", k: "wxsymbol" };
     if (map[e.key.toLowerCase()] && !e.ctrlKey && !e.metaKey) {
       editor.setTool(map[e.key.toLowerCase()]);
       selectToolBtn(map[e.key.toLowerCase()]);
@@ -804,5 +820,6 @@
   selectToolBtn("select");
   refreshUI();
   fitZoom();
+  if (document.fonts && document.fonts.ready) { document.fonts.ready.then(() => editor.render()); }
   setStatus("Listo. Carga una imagen de radar/satélite para comenzar (botón 'Cargar imagen').");
 })();

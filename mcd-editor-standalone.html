@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Editor de Discusiones de Mesoescala (MCD)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,700;1,400;1,700&display=swap" />
   <style>
 :root {
   --bg: #0f141b;
@@ -265,6 +268,7 @@ input[type="range"] { width: 100%; }
         <span class="tool-label">Herramientas</span>
         <button class="tool" data-tool="select" title="Seleccionar / mover (V)">▣ Seleccionar</button>
         <button class="tool" data-tool="text" title="Texto libre (T)">🅣 Texto</button>
+        <button class="tool" data-tool="citylabel" title="Etiqueta de ciudad (Open Sans Bold, con contorno)">🏙 Etiqueta de ciudad</button>
         <button class="tool" data-tool="place-textbox" title="Caja con texto (estilo número MCD)">▭ Caja de texto</button>
         <button class="tool" data-tool="arrow" title="Flecha">➤ Flecha</button>
         <button class="tool" data-tool="polyline" title="Poli-línea (clics; doble clic para terminar)">⤳ Poli-línea</button>
@@ -1090,7 +1094,7 @@ input[type="range"] { width: 100%; }
         const lines = String(s.text || "").split("\n");
         const lh = (s.fontSize || 18) * 1.25;
         let tx = s.x;
-        if (s.haloColor) {
+        if (s.haloColor && (s.haloWidth || 0) > 0) {
           ctx.lineWidth = (s.haloWidth || 3);
           ctx.strokeStyle = s.haloColor;
           ctx.lineJoin = "round";
@@ -1705,6 +1709,26 @@ input[type="range"] { width: 100%; }
       return;
     }
 
+    if (tool === "citylabel") {
+      const s = Shapes.create("text", this.style);
+      Object.assign(s, {
+        x: p.x, y: p.y, text: "Ciudad",
+        fontFamily: "Open Sans", bold: true,
+        fontSize: this.style.fontSize || 22,
+        color: this.style.textColor || "#111111",
+        align: "center",
+        haloColor: "#ffffff", haloWidth: 4,
+      });
+      this.objects.push(s);
+      this.selectedId = s.id;
+      this.pushHistory();
+      this.render();
+      this._emitChange();
+      this.setTool("select");
+      if (this.onEditText) this.onEditText(s);
+      return;
+    }
+
     if (tool === "station") {
       const s = Shapes.create("station", this.style);
       s.x = p.x; s.y = p.y;
@@ -1954,7 +1978,7 @@ input[type="range"] { width: 100%; }
   const canvasScroll = $("canvasScroll");
 
   const FONTS = [
-    "Arial", "Helvetica", "Verdana", "Tahoma", "Trebuchet MS",
+    "Open Sans", "Arial", "Helvetica", "Verdana", "Tahoma", "Trebuchet MS",
     "Segoe UI", "Calibri", "Times New Roman", "Georgia",
     "Courier New", "Consolas", "Impact", "Comic Sans MS",
   ];
@@ -2009,6 +2033,7 @@ input[type="range"] { width: 100%; }
   const HINTS = {
     select: "Clic para seleccionar. Arrastra para mover. Tira de los puntos/tiradores para ajustar. Doble clic en un texto para editarlo.",
     text: "Clic en el lienzo para colocar texto. Se abrirá el editor.",
+    citylabel: "Clic para colocar una etiqueta de ciudad (Open Sans Bold). Edita el texto, y cambia el color y el contorno en el panel de la derecha.",
     "place-textbox": "Clic para colocar una caja blanca con borde (estilo número MCD). Doble clic para editar su texto.",
     arrow: "Arrastra para dibujar una flecha. Mantén Shift para ángulos de 45°.",
     polyline: "Clic para añadir puntos. Doble clic o Enter para terminar. Esc cancela.",
@@ -2347,7 +2372,8 @@ input[type="range"] { width: 100%; }
         ${isBox ? colorField("Relleno de la caja", "pFill", parseColor(sel.fill).hex, true, parseColor(sel.fill).none) : ""}
         ${isBox ? colorField("Borde de la caja", "pStroke", parseColor(sel.stroke).hex, true, parseColor(sel.stroke).none) : ""}
         ${isBox ? `<div class="field"><label>Grosor del borde: <span id="bwVal">${sel.strokeWidth||3}</span>px</label><input type="range" id="pStrokeW" min="0" max="20" value="${sel.strokeWidth||3}" /></div>` : ""}
-        ${!isBox ? `<div class="field"><label class="checkbox-row"><input type="checkbox" id="pHalo" ${sel.haloColor?'checked':''}/> Halo blanco (legibilidad)</label></div>` : ""}
+        ${!isBox ? colorField("Color del contorno", "pHaloColor", parseColor(sel.haloColor || "#ffffff").hex, false) : ""}
+        ${!isBox ? `<div class="field"><label>Grosor del contorno: <span id="hwVal">${sel.haloWidth||0}</span>px</label><input type="range" id="pHaloW" min="0" max="14" value="${sel.haloWidth||0}" /></div>` : ""}
       </div>`);
     panelBody.appendChild(wrap);
 
@@ -2373,7 +2399,21 @@ input[type="range"] { width: 100%; }
       sw.oninput = () => { sel.strokeWidth = parseInt(sw.value, 10); $("bwVal").textContent = sel.strokeWidth; editor.render(); };
       sw.onchange = commit;
     } else {
-      $("pHalo").onchange = (e) => { sel.haloColor = e.target.checked ? "#ffffff" : null; editor.render(); commit(); };
+      const hc = $("pHaloColor");
+      hc.oninput = () => {
+        sel.haloColor = hc.value;
+        if (!(sel.haloWidth > 0)) { sel.haloWidth = 4; const hw = $("pHaloW"); hw.value = 4; $("hwVal").textContent = 4; }
+        editor.render();
+      };
+      hc.onchange = commit;
+      const hw = $("pHaloW");
+      hw.oninput = () => {
+        sel.haloWidth = parseInt(hw.value, 10);
+        $("hwVal").textContent = sel.haloWidth;
+        if (sel.haloWidth > 0 && !sel.haloColor) sel.haloColor = hc.value;
+        editor.render();
+      };
+      hw.onchange = commit;
     }
   }
 
@@ -2722,7 +2762,7 @@ input[type="range"] { width: 100%; }
     }
 
     // tool shortcuts
-    const map = { v: "select", t: "text", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse", s: "station", i: "isobar", k: "wxsymbol" };
+    const map = { v: "select", t: "text", c: "citylabel", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse", s: "station", i: "isobar", k: "wxsymbol" };
     if (map[e.key.toLowerCase()] && !e.ctrlKey && !e.metaKey) {
       editor.setTool(map[e.key.toLowerCase()]);
       selectToolBtn(map[e.key.toLowerCase()]);
@@ -2741,6 +2781,7 @@ input[type="range"] { width: 100%; }
   selectToolBtn("select");
   refreshUI();
   fitZoom();
+  if (document.fonts && document.fonts.ready) { document.fonts.ready.then(() => editor.render()); }
   setStatus("Listo. Carga una imagen de radar/satélite para comenzar (botón 'Cargar imagen').");
 })();
 
