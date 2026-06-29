@@ -80,6 +80,7 @@
     rect: "Arrastra para dibujar un rectángulo. Shift = cuadrado.",
     ellipse: "Arrastra para dibujar una elipse. Shift = círculo.",
     front: "Clic para añadir puntos del frente. Doble clic o Enter para terminar. Usa 'Voltear lado' para cambiar la dirección de los símbolos.",
+    station: "Clic para colocar un modelo de estación. Luego edita viento, T, Td, presión y cielo en el panel de la derecha.",
   };
   function updateToolHint(tool, front) {
     let h = HINTS[tool] || "";
@@ -113,6 +114,88 @@
       setStatus(`Lienzo en blanco ${w}×${h}px.`);
     }
   });
+
+  // ---- SPC-style MCD template ----
+  const tplModal = $("tplModal");
+  const pad2 = (n) => ("0" + n).slice(-2);
+  const utcStamp = (d) => pad2(d.getUTCDate()) + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes());
+  $("btnTemplate").addEventListener("click", () => {
+    const now = new Date();
+    $("tplFrom").value = utcStamp(now);
+    $("tplTo").value = utcStamp(new Date(now.getTime() + 2 * 3600 * 1000));
+    tplModal.hidden = false;
+  });
+  $("tplCancel").addEventListener("click", () => { tplModal.hidden = true; });
+  tplModal.addEventListener("click", (e) => { if (e.target === tplModal) tplModal.hidden = true; });
+  tplModal.addEventListener("keydown", (e) => { if (e.key === "Escape") tplModal.hidden = true; });
+  $("tplInsert").addEventListener("click", () => { insertTemplate(); tplModal.hidden = true; });
+
+  function insertTemplate() {
+    const W = canvas.width, H = canvas.height;
+    const margin = Math.max(12, Math.round(W * 0.02));
+    const fs = Math.max(14, Math.round(W * 0.016));
+    const num = ($("tplNum").value || "").trim() || "0001";
+    const office = ($("tplOffice").value || "").trim();
+    const from = ($("tplFrom").value || "").trim();
+    const to = ($("tplTo").value || "").trim();
+    const prob = ($("tplProb").value || "").trim();
+    const areas = ($("tplAreas").value || "").trim();
+    const summary = ($("tplSummary").value || "").trim();
+
+    let headerText = `DISCUSIÓN DE MESOESCALA ${num}`;
+    if (office) headerText += `\n${office}`;
+    const line3 = [];
+    if (from || to) line3.push(`Válido ${from}Z - ${to}Z`);
+    if (prob !== "") line3.push(`Prob. de aviso: ${prob}%`);
+    if (line3.length) headerText += `\n${line3.join("   ·   ")}`;
+    if (areas) headerText += `\nÁreas: ${areas}`;
+
+    const lines = headerText.split("\n").length;
+    const header = Shapes.create("textbox", editor.style);
+    Object.assign(header, {
+      x: margin, y: margin, w: W - margin * 2,
+      h: Math.round(lines * fs * 1.4 + 20),
+      text: headerText, fontFamily: "Arial", fontSize: fs, bold: true,
+      textColor: "#111111", fill: "#ffffff", stroke: "#b00000", strokeWidth: 3,
+      align: "left", padding: 10,
+    });
+    editor.objects.push(header);
+
+    if (summary) {
+      const sfs = Math.max(12, Math.round(fs * 0.85));
+      const contentW = W - margin * 2 - 20;
+      const cpl = Math.max(20, Math.floor(contentW / (sfs * 0.52)));
+      const approxLines = summary.split("\n").reduce((acc, ln) => acc + Math.max(1, Math.ceil(ln.length / cpl)), 0) + 1;
+      const box = Shapes.create("textbox", editor.style);
+      Object.assign(box, {
+        x: margin, y: header.y + header.h + Math.round(margin * 0.5), w: W - margin * 2,
+        h: Math.round(approxLines * sfs * 1.35 + 18),
+        text: "RESUMEN... " + summary, fontFamily: "Arial", fontSize: sfs, bold: false,
+        textColor: "#111111", fill: "#ffffff", stroke: "#444444", strokeWidth: 2,
+        align: "left", padding: 10,
+      });
+      editor.objects.push(box);
+    }
+
+    if ($("tplFooter").checked) {
+      const ffs = Math.max(10, Math.round(fs * 0.7));
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", " ") + "Z";
+      const footer = Shapes.create("text", editor.style);
+      Object.assign(footer, {
+        x: margin, y: H - margin - ffs * 1.4,
+        text: `Generado con Editor MCD · ${stamp}`,
+        fontFamily: "Arial", fontSize: ffs, color: "#111111",
+        bold: false, italic: false, align: "left", haloColor: "#ffffff", haloWidth: 3,
+      });
+      editor.objects.push(footer);
+    }
+
+    editor.selectedId = header.id;
+    editor.pushHistory();
+    editor.render();
+    forcePanelRebuild();
+    setStatus(`Plantilla MCD ${num} insertada.`);
+  }
 
   $("btnExportPng").addEventListener("click", () => {
     editor.exportPNG();
@@ -265,6 +348,7 @@
     else if (sel.type === "polyline" || sel.type === "freehand") buildLineControls(sel, false);
     else if (sel.type === "arrow") buildLineControls(sel, true);
     else if (sel.type === "front") buildFrontControls(sel);
+    else if (sel.type === "station") buildStationControls(sel);
     else if (sel.type === "image") buildImageControls(sel);
 
     // ---- opacity (all) ----
@@ -452,6 +536,50 @@
     sc.onchange = commit;
   }
 
+  function buildStationControls(sel) {
+    const COVER = [[0,"0 — despejado"],[1,"1 okta"],[2,"2 oktas"],[3,"3 oktas"],[4,"4 — medio"],[5,"5 oktas"],[6,"6 oktas"],[7,"7 oktas"],[8,"8 — cubierto"]];
+    const WX = [["none","(ninguno)"],["rain","Lluvia"],["drizzle","Llovizna"],["showers","Chubascos"],["snow","Nieve"],["tstorm","Tormenta"],["fog","Niebla"]];
+    const wrap = el(`
+      <div>
+        <div class="row">
+          <div class="field" style="margin:0"><label>Temperatura</label><input type="text" id="stTemp" value="${sel.temp ?? ""}" /></div>
+          <div class="field" style="margin:0"><label>Punto de rocío</label><input type="text" id="stDew" value="${sel.dewpoint ?? ""}" /></div>
+        </div>
+        <div class="field" style="margin-top:13px"><label>Presión (3 dígitos codificados)</label><input type="text" id="stPres" value="${sel.pressure ?? ""}" /></div>
+        <div class="field"><label>Cobertura del cielo</label>
+          <select id="stCover">${COVER.map(([v,l])=>`<option value="${v}" ${(+sel.cover)===v?'selected':''}>${l}</option>`).join("")}</select>
+        </div>
+        <div class="field"><label>Tiempo presente</label>
+          <select id="stWx">${WX.map(([v,l])=>`<option value="${v}" ${sel.presentWx===v?'selected':''}>${l}</option>`).join("")}</select>
+        </div>
+        <div class="row">
+          <div class="field" style="margin:0"><label>Dir. viento (°)</label><input type="number" id="stDir" min="0" max="360" value="${sel.windDir ?? 0}" /></div>
+          <div class="field" style="margin:0"><label>Veloc. (kt)</label><input type="number" id="stSpd" min="0" max="200" value="${sel.windSpeed ?? 0}" /></div>
+        </div>
+        <div class="field" style="margin-top:13px"><label>Hemisferio (lado de las barbas)</label>
+          <select id="stHem"><option value="S" ${sel.hemisphere==='S'?'selected':''}>Sur</option><option value="N" ${sel.hemisphere==='N'?'selected':''}>Norte</option></select>
+        </div>
+        ${colorField("Color", "stColor", parseColor(sel.color).hex, false)}
+        <div class="field"><label>Tamaño: <span id="stSizeVal">${sel.size||72}</span>px</label>
+          <input type="range" id="stSize" min="36" max="180" value="${sel.size||72}" /></div>
+        <div class="muted-note">Veloc. en nudos: media barba=5, barba=10, banderín=50. Calma (&lt;3 kt) = círculo.</div>
+      </div>`);
+    panelBody.appendChild(wrap);
+    const bindText = (id, key) => { const e = $(id); e.oninput = () => { sel[key] = e.value; editor.render(); }; e.onchange = commit; };
+    const bindNum = (id, key) => { const e = $(id); e.oninput = () => { sel[key] = parseFloat(e.value) || 0; editor.render(); }; e.onchange = commit; };
+    bindText("stTemp", "temp"); bindText("stDew", "dewpoint"); bindText("stPres", "pressure");
+    bindNum("stDir", "windDir"); bindNum("stSpd", "windSpeed");
+    $("stCover").onchange = (e) => { sel.cover = parseInt(e.target.value, 10); editor.render(); commit(); };
+    $("stWx").onchange = (e) => { sel.presentWx = e.target.value; editor.render(); commit(); };
+    $("stHem").onchange = (e) => { sel.hemisphere = e.target.value; editor.setStyle({ hemisphere: e.target.value }); editor.render(); commit(); };
+    const col = $("stColor");
+    col.oninput = () => { sel.color = col.value; editor.render(); };
+    col.onchange = commit;
+    const sz = $("stSize");
+    sz.oninput = () => { sel.size = parseInt(sz.value, 10); $("stSizeVal").textContent = sel.size; editor.render(); };
+    sz.onchange = commit;
+  }
+
   function buildImageControls(sel) {
     const wrap = el(`<div class="muted-note">Imagen de fondo. Puedes moverla y redimensionarla con los tiradores. Carga una nueva imagen desde la barra superior para reemplazarla.</div>`);
     panelBody.appendChild(wrap);
@@ -496,6 +624,7 @@
       text: "Texto", textbox: "Caja de texto", rect: "Rectángulo", ellipse: "Elipse",
       polygon: "Área / polígono", polyline: "Poli-línea", freehand: "Trazo libre",
       arrow: "Flecha", front: "Frente", image: "Imagen de fondo",
+      station: "Estación meteorológica",
     })[t] || "Propiedades";
   }
 
@@ -585,7 +714,7 @@
     }
 
     // tool shortcuts
-    const map = { v: "select", t: "text", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse" };
+    const map = { v: "select", t: "text", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse", s: "station" };
     if (map[e.key.toLowerCase()] && !e.ctrlKey && !e.metaKey) {
       editor.setTool(map[e.key.toLowerCase()]);
       selectToolBtn(map[e.key.toLowerCase()]);

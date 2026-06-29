@@ -192,6 +192,40 @@ input[type="range"] { width: 100%; }
   line-height: 1.3;
 }
 
+/* ---------- modal ---------- */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.55);
+  display: none; align-items: center; justify-content: center;
+}
+.modal-overlay:not([hidden]) { display: flex; }
+.modal {
+  width: min(560px, 92vw); max-height: 88vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px 22px; box-shadow: var(--shadow);
+}
+.modal h3 { margin: 0 0 4px; font-size: 17px; }
+.modal-sub { margin: 0 0 16px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal-grid label {
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); font-weight: 600;
+}
+.modal-grid label.full { grid-column: 1 / -1; }
+.modal-grid label.checkbox-row {
+  flex-direction: row; align-items: center; text-transform: none;
+  letter-spacing: 0; font-weight: 400; font-size: 13px; color: var(--text);
+}
+.modal-grid textarea {
+  width: 100%; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px;
+  font-size: 13px; font-family: inherit; resize: vertical;
+}
+.modal-actions {
+  display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;
+}
+
 </style>
 </head>
 <body>
@@ -210,6 +244,7 @@ input[type="range"] { width: 100%; }
         <input type="file" id="imageInput" accept="image/*" hidden />
       </label>
       <button class="btn" id="btnNewCanvas" title="Lienzo en blanco">📄 Lienzo en blanco</button>
+      <button class="btn" id="btnTemplate" title="Insertar plantilla de Discusión de Mesoescala (estilo SPC)">📋 Plantilla MCD</button>
       <span class="sep"></span>
       <button class="btn" id="btnExportPng" title="Exportar como PNG">⬇️ Exportar PNG</button>
       <button class="btn" id="btnSaveProj" title="Guardar proyecto editable (.json)">💾 Guardar</button>
@@ -237,6 +272,11 @@ input[type="range"] { width: 100%; }
         <button class="tool" data-tool="polygon" title="Área / polígono resaltado">⬡ Área</button>
         <button class="tool" data-tool="rect" title="Rectángulo">▢ Rectángulo</button>
         <button class="tool" data-tool="ellipse" title="Elipse / círculo">◯ Elipse</button>
+      </div>
+
+      <div class="tool-group">
+        <span class="tool-label">Datos</span>
+        <button class="tool" data-tool="station" title="Modelo de estación (viento, T, Td, presión, cielo)">⊛ Estación</button>
       </div>
 
       <div class="tool-group">
@@ -297,6 +337,28 @@ input[type="range"] { width: 100%; }
 
   <!-- inline text editor -->
   <textarea id="textEditor" class="text-editor" spellcheck="false"></textarea>
+
+  <!-- Modal: plantilla de Discusión de Mesoescala -->
+  <div class="modal-overlay" id="tplModal" hidden>
+    <div class="modal">
+      <h3>📋 Plantilla de Discusión de Mesoescala</h3>
+      <p class="modal-sub">Genera un encabezado estilo SPC con la hora UTC. Luego puedes mover y editar cada bloque como cualquier texto.</p>
+      <div class="modal-grid">
+        <label>N° de discusión <input type="text" id="tplNum" value="0001" /></label>
+        <label>Prob. de aviso (%) <input type="number" id="tplProb" value="40" min="0" max="100" /></label>
+        <label class="full">Emitida por <input type="text" id="tplOffice" value="Centro de Predicción de Mesoescala" /></label>
+        <label>Válido desde (UTC) <input type="text" id="tplFrom" placeholder="DDHHMMZ" /></label>
+        <label>Válido hasta (UTC) <input type="text" id="tplTo" placeholder="DDHHMMZ" /></label>
+        <label class="full">Áreas afectadas <input type="text" id="tplAreas" placeholder="p. ej. centro-este de Argentina" /></label>
+        <label class="full">Resumen <textarea id="tplSummary" rows="3" placeholder="Texto del análisis / resumen…"></textarea></label>
+        <label class="full checkbox-row"><input type="checkbox" id="tplFooter" checked /> Incluir pie con fecha/hora de generación</label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="tplCancel">Cancelar</button>
+        <button class="btn primary" id="tplInsert">Insertar plantilla</button>
+      </div>
+    </div>
+  </div>
 
   <script>
 /* geometry.js — vector math & path helpers (no dependencies) */
@@ -671,6 +733,10 @@ input[type="range"] { width: 100%; }
       const lh = (s.fontSize || 18) * 1.25;
       return { x: s.x, y: s.y, w: maxW + 4, h: lh * lines.length + 4 };
     }
+    if (s.type === "station") {
+      const size = s.size || 72;
+      return { x: s.x - size, y: s.y - size, w: size * 2, h: size * 2 };
+    }
     return normBox(s);
   };
 
@@ -721,6 +787,10 @@ input[type="range"] { width: 100%; }
         const fine = Geo.smoothPath(s.points, 0.5);
         return Geo.pointPolylineDistance(p, fine) <= (s.lineWidth || 4) + tol + 6;
       }
+      case "station": {
+        const b = Shapes.bounds(s);
+        return p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+      }
       default:
         return false;
     }
@@ -739,6 +809,139 @@ input[type="range"] { width: 100%; }
     ctx.fillStyle = color;
     ctx.fill();
   }
+
+  // ---- wind barb ----
+  // dirDeg = meteorological direction the wind comes FROM (0=N, 90=E).
+  // southern=true mirrors the barbs (Southern-Hemisphere convention).
+  function drawWindBarb(ctx, cx, cy, dirDeg, speedKt, length, color, southern) {
+    speedKt = Math.max(0, Math.round((speedKt || 0) / 5) * 5);
+    const ang = (dirDeg || 0) * Math.PI / 180;
+    const ux = Math.sin(ang), uy = -Math.cos(ang); // toward source direction (N=up)
+    const ex = cx + ux * length, ey = cy + uy * length; // staff tip away from station
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.5, length * 0.05);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    if (speedKt < 3) {
+      ctx.beginPath(); ctx.arc(cx, cy, Math.max(3, length * 0.13), 0, Math.PI * 2); ctx.stroke();
+      ctx.restore(); return;
+    }
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+    const sx = -ux, sy = -uy;                  // tip -> station direction
+    const sgn = southern ? -1 : 1;
+    const px = -uy * sgn, py = ux * sgn;        // perpendicular (barb side)
+    const barbLen = length * 0.42;
+    const step = length * 0.15;
+    const pointAt = (d) => ({ x: ex + sx * d, y: ey + sy * d });
+    let cursor = 0, rem = speedKt;
+    while (rem >= 50) { // pennants
+      const a = pointAt(cursor), b = pointAt(cursor + step);
+      const tip = { x: a.x + px * barbLen, y: a.y + py * barbLen };
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(tip.x, tip.y); ctx.lineTo(b.x, b.y); ctx.closePath(); ctx.fill();
+      cursor += step * 1.25; rem -= 50;
+    }
+    while (rem >= 10) { // full barbs
+      const a = pointAt(cursor);
+      const tip = { x: a.x + px * barbLen, y: a.y + py * barbLen };
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+      cursor += step; rem -= 10;
+    }
+    if (rem >= 5) { // half barb
+      if (cursor === 0) cursor = step;
+      const a = pointAt(cursor);
+      const tip = { x: a.x + px * barbLen * 0.5, y: a.y + py * barbLen * 0.5 };
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  Shapes.drawWindBarb = drawWindBarb;
+
+  // ---- sky-cover circle (oktas 0..8) ----
+  function drawSkyCover(ctx, cx, cy, r, oktas, color) {
+    oktas = Math.max(0, Math.min(8, oktas == null ? 0 : oktas));
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.2, r * 0.14);
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    if (oktas <= 0) { ctx.restore(); return; }
+    if (oktas >= 8) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return; }
+    const start = -Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, start, start + (oktas / 8) * Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ---- present-weather symbols (simplified) ----
+  function drawPresentWx(ctx, cx, cy, sz, code, color) {
+    if (!code || code === "none") return;
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = Math.max(1.4, sz * 0.08);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    const dot = (x, y, rr) => { ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.fill(); };
+    if (code === "rain") {
+      dot(cx - sz * 0.18, cy - sz * 0.05, sz * 0.09);
+      dot(cx + sz * 0.18, cy - sz * 0.05, sz * 0.09);
+      dot(cx, cy + sz * 0.20, sz * 0.09);
+    } else if (code === "drizzle") {
+      const comma = (x, y) => { ctx.beginPath(); ctx.arc(x, y, sz * 0.08, Math.PI * 0.2, Math.PI * 1.4); ctx.stroke(); };
+      comma(cx - sz * 0.16, cy); comma(cx + sz * 0.16, cy); comma(cx, cy + sz * 0.22);
+    } else if (code === "snow") {
+      ctx.beginPath();
+      for (let i = 0; i < 3; i++) {
+        const a = i * Math.PI / 3;
+        ctx.moveTo(cx - Math.cos(a) * sz * 0.22, cy - Math.sin(a) * sz * 0.22);
+        ctx.lineTo(cx + Math.cos(a) * sz * 0.22, cy + Math.sin(a) * sz * 0.22);
+      }
+      ctx.stroke();
+    } else if (code === "showers") {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - sz * 0.24); ctx.lineTo(cx - sz * 0.20, cy + sz * 0.12); ctx.lineTo(cx + sz * 0.20, cy + sz * 0.12);
+      ctx.closePath(); ctx.fill();
+      dot(cx, cy + sz * 0.26, sz * 0.08);
+    } else if (code === "tstorm") {
+      ctx.beginPath();
+      ctx.moveTo(cx - sz * 0.12, cy - sz * 0.26);
+      ctx.lineTo(cx + sz * 0.06, cy - sz * 0.26);
+      ctx.lineTo(cx - sz * 0.04, cy + sz * 0.02);
+      ctx.lineTo(cx + sz * 0.14, cy + sz * 0.02);
+      ctx.lineTo(cx - sz * 0.10, cy + sz * 0.30);
+      ctx.lineTo(cx - sz * 0.02, cy + sz * 0.06);
+      ctx.lineTo(cx - sz * 0.16, cy + sz * 0.06);
+      ctx.closePath(); ctx.fill();
+    } else if (code === "fog") {
+      ctx.beginPath();
+      for (let i = -1; i <= 1; i++) {
+        const y = cy + i * sz * 0.16;
+        ctx.moveTo(cx - sz * 0.24, y); ctx.lineTo(cx + sz * 0.24, y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ---- station model ----
+  function drawStation(ctx, s) {
+    const size = s.size || 72;
+    const cx = s.x, cy = s.y;
+    const color = s.color || "#111111";
+    const r = size * 0.16;
+    drawWindBarb(ctx, cx, cy, s.windDir || 0, s.windSpeed || 0, size * 0.85, color, s.hemisphere === "S");
+    drawSkyCover(ctx, cx, cy, r, s.cover == null ? 0 : s.cover, color);
+    const ts = Math.max(9, size * 0.2);
+    ctx.fillStyle = color;
+    ctx.font = `bold ${Math.round(ts)}px Arial`;
+    ctx.textBaseline = "middle";
+    const dx = size * 0.30, dy = size * 0.24;
+    if (s.temp !== "" && s.temp != null) { ctx.textAlign = "right"; ctx.fillText(String(s.temp), cx - dx, cy - dy); }
+    if (s.dewpoint !== "" && s.dewpoint != null) { ctx.textAlign = "right"; ctx.fillText(String(s.dewpoint), cx - dx, cy + dy); }
+    if (s.pressure !== "" && s.pressure != null) { ctx.textAlign = "left"; ctx.fillText(String(s.pressure), cx + dx, cy - dy); }
+    drawPresentWx(ctx, cx - dx - ts * 0.7, cy, ts * 1.1, s.presentWx, color);
+  }
+  Shapes.drawStation = drawStation;
 
   // ---- rendering ----
   Shapes.draw = function (ctx, s) {
@@ -871,6 +1074,10 @@ input[type="range"] { width: 100%; }
         });
         break;
       }
+      case "station": {
+        drawStation(ctx, s);
+        break;
+      }
     }
     ctx.restore();
   };
@@ -931,6 +1138,15 @@ input[type="range"] { width: 100%; }
         return Object.assign(base, {
           points: [], frontType: style.frontType || "cold", side: style.side || 1,
           lineWidth: style.lineWidth || 4, scale: style.scale || 1,
+        });
+      case "station":
+        return Object.assign(base, {
+          x: 0, y: 0, size: style.stationSize || 72,
+          temp: "12", dewpoint: "9", pressure: "132",
+          cover: 4, presentWx: "none",
+          windDir: 320, windSpeed: 15,
+          hemisphere: style.hemisphere || "S",
+          color: "#111111",
         });
       default:
         return base;
@@ -1239,9 +1455,8 @@ input[type="range"] { width: 100%; }
         ctx.lineWidth = 1.5 / this._screenScale;
         ctx.stroke();
       }
-    } else {
-      for (const h of this._handleRects(s)) {
-        ctx.beginPath();
+    } else if (s.type !== "station") {
+      for (const h of this._handleRects(s)) {        ctx.beginPath();
         ctx.rect(h.x - h.r, h.y - h.r, h.r * 2, h.r * 2);
         ctx.fillStyle = "#ffffff";
         ctx.fill();
@@ -1269,6 +1484,7 @@ input[type="range"] { width: 100%; }
       }
       return null;
     }
+    if (s.type === "station") return null;
     for (const h of this._handleRects(s)) {
       if (Math.abs(p.x - h.x) <= tol && Math.abs(p.y - h.y) <= tol) return { handle: h.name };
     }
@@ -1351,6 +1567,18 @@ input[type="range"] { width: 100%; }
       this._emitChange();
       this.setTool("select");
       if (this.onEditText) this.onEditText(s);
+      return;
+    }
+
+    if (tool === "station") {
+      const s = Shapes.create("station", this.style);
+      s.x = p.x; s.y = p.y;
+      this.objects.push(s);
+      this.selectedId = s.id;
+      this.pushHistory();
+      this.render();
+      this._emitChange();
+      this.setTool("select");
       return;
     }
   };
@@ -1642,6 +1870,7 @@ input[type="range"] { width: 100%; }
     rect: "Arrastra para dibujar un rectángulo. Shift = cuadrado.",
     ellipse: "Arrastra para dibujar una elipse. Shift = círculo.",
     front: "Clic para añadir puntos del frente. Doble clic o Enter para terminar. Usa 'Voltear lado' para cambiar la dirección de los símbolos.",
+    station: "Clic para colocar un modelo de estación. Luego edita viento, T, Td, presión y cielo en el panel de la derecha.",
   };
   function updateToolHint(tool, front) {
     let h = HINTS[tool] || "";
@@ -1675,6 +1904,88 @@ input[type="range"] { width: 100%; }
       setStatus(`Lienzo en blanco ${w}×${h}px.`);
     }
   });
+
+  // ---- SPC-style MCD template ----
+  const tplModal = $("tplModal");
+  const pad2 = (n) => ("0" + n).slice(-2);
+  const utcStamp = (d) => pad2(d.getUTCDate()) + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes());
+  $("btnTemplate").addEventListener("click", () => {
+    const now = new Date();
+    $("tplFrom").value = utcStamp(now);
+    $("tplTo").value = utcStamp(new Date(now.getTime() + 2 * 3600 * 1000));
+    tplModal.hidden = false;
+  });
+  $("tplCancel").addEventListener("click", () => { tplModal.hidden = true; });
+  tplModal.addEventListener("click", (e) => { if (e.target === tplModal) tplModal.hidden = true; });
+  tplModal.addEventListener("keydown", (e) => { if (e.key === "Escape") tplModal.hidden = true; });
+  $("tplInsert").addEventListener("click", () => { insertTemplate(); tplModal.hidden = true; });
+
+  function insertTemplate() {
+    const W = canvas.width, H = canvas.height;
+    const margin = Math.max(12, Math.round(W * 0.02));
+    const fs = Math.max(14, Math.round(W * 0.016));
+    const num = ($("tplNum").value || "").trim() || "0001";
+    const office = ($("tplOffice").value || "").trim();
+    const from = ($("tplFrom").value || "").trim();
+    const to = ($("tplTo").value || "").trim();
+    const prob = ($("tplProb").value || "").trim();
+    const areas = ($("tplAreas").value || "").trim();
+    const summary = ($("tplSummary").value || "").trim();
+
+    let headerText = `DISCUSIÓN DE MESOESCALA ${num}`;
+    if (office) headerText += `\n${office}`;
+    const line3 = [];
+    if (from || to) line3.push(`Válido ${from}Z - ${to}Z`);
+    if (prob !== "") line3.push(`Prob. de aviso: ${prob}%`);
+    if (line3.length) headerText += `\n${line3.join("   ·   ")}`;
+    if (areas) headerText += `\nÁreas: ${areas}`;
+
+    const lines = headerText.split("\n").length;
+    const header = Shapes.create("textbox", editor.style);
+    Object.assign(header, {
+      x: margin, y: margin, w: W - margin * 2,
+      h: Math.round(lines * fs * 1.4 + 20),
+      text: headerText, fontFamily: "Arial", fontSize: fs, bold: true,
+      textColor: "#111111", fill: "#ffffff", stroke: "#b00000", strokeWidth: 3,
+      align: "left", padding: 10,
+    });
+    editor.objects.push(header);
+
+    if (summary) {
+      const sfs = Math.max(12, Math.round(fs * 0.85));
+      const contentW = W - margin * 2 - 20;
+      const cpl = Math.max(20, Math.floor(contentW / (sfs * 0.52)));
+      const approxLines = summary.split("\n").reduce((acc, ln) => acc + Math.max(1, Math.ceil(ln.length / cpl)), 0) + 1;
+      const box = Shapes.create("textbox", editor.style);
+      Object.assign(box, {
+        x: margin, y: header.y + header.h + Math.round(margin * 0.5), w: W - margin * 2,
+        h: Math.round(approxLines * sfs * 1.35 + 18),
+        text: "RESUMEN... " + summary, fontFamily: "Arial", fontSize: sfs, bold: false,
+        textColor: "#111111", fill: "#ffffff", stroke: "#444444", strokeWidth: 2,
+        align: "left", padding: 10,
+      });
+      editor.objects.push(box);
+    }
+
+    if ($("tplFooter").checked) {
+      const ffs = Math.max(10, Math.round(fs * 0.7));
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", " ") + "Z";
+      const footer = Shapes.create("text", editor.style);
+      Object.assign(footer, {
+        x: margin, y: H - margin - ffs * 1.4,
+        text: `Generado con Editor MCD · ${stamp}`,
+        fontFamily: "Arial", fontSize: ffs, color: "#111111",
+        bold: false, italic: false, align: "left", haloColor: "#ffffff", haloWidth: 3,
+      });
+      editor.objects.push(footer);
+    }
+
+    editor.selectedId = header.id;
+    editor.pushHistory();
+    editor.render();
+    forcePanelRebuild();
+    setStatus(`Plantilla MCD ${num} insertada.`);
+  }
 
   $("btnExportPng").addEventListener("click", () => {
     editor.exportPNG();
@@ -1827,6 +2138,7 @@ input[type="range"] { width: 100%; }
     else if (sel.type === "polyline" || sel.type === "freehand") buildLineControls(sel, false);
     else if (sel.type === "arrow") buildLineControls(sel, true);
     else if (sel.type === "front") buildFrontControls(sel);
+    else if (sel.type === "station") buildStationControls(sel);
     else if (sel.type === "image") buildImageControls(sel);
 
     // ---- opacity (all) ----
@@ -2014,6 +2326,50 @@ input[type="range"] { width: 100%; }
     sc.onchange = commit;
   }
 
+  function buildStationControls(sel) {
+    const COVER = [[0,"0 — despejado"],[1,"1 okta"],[2,"2 oktas"],[3,"3 oktas"],[4,"4 — medio"],[5,"5 oktas"],[6,"6 oktas"],[7,"7 oktas"],[8,"8 — cubierto"]];
+    const WX = [["none","(ninguno)"],["rain","Lluvia"],["drizzle","Llovizna"],["showers","Chubascos"],["snow","Nieve"],["tstorm","Tormenta"],["fog","Niebla"]];
+    const wrap = el(`
+      <div>
+        <div class="row">
+          <div class="field" style="margin:0"><label>Temperatura</label><input type="text" id="stTemp" value="${sel.temp ?? ""}" /></div>
+          <div class="field" style="margin:0"><label>Punto de rocío</label><input type="text" id="stDew" value="${sel.dewpoint ?? ""}" /></div>
+        </div>
+        <div class="field" style="margin-top:13px"><label>Presión (3 dígitos codificados)</label><input type="text" id="stPres" value="${sel.pressure ?? ""}" /></div>
+        <div class="field"><label>Cobertura del cielo</label>
+          <select id="stCover">${COVER.map(([v,l])=>`<option value="${v}" ${(+sel.cover)===v?'selected':''}>${l}</option>`).join("")}</select>
+        </div>
+        <div class="field"><label>Tiempo presente</label>
+          <select id="stWx">${WX.map(([v,l])=>`<option value="${v}" ${sel.presentWx===v?'selected':''}>${l}</option>`).join("")}</select>
+        </div>
+        <div class="row">
+          <div class="field" style="margin:0"><label>Dir. viento (°)</label><input type="number" id="stDir" min="0" max="360" value="${sel.windDir ?? 0}" /></div>
+          <div class="field" style="margin:0"><label>Veloc. (kt)</label><input type="number" id="stSpd" min="0" max="200" value="${sel.windSpeed ?? 0}" /></div>
+        </div>
+        <div class="field" style="margin-top:13px"><label>Hemisferio (lado de las barbas)</label>
+          <select id="stHem"><option value="S" ${sel.hemisphere==='S'?'selected':''}>Sur</option><option value="N" ${sel.hemisphere==='N'?'selected':''}>Norte</option></select>
+        </div>
+        ${colorField("Color", "stColor", parseColor(sel.color).hex, false)}
+        <div class="field"><label>Tamaño: <span id="stSizeVal">${sel.size||72}</span>px</label>
+          <input type="range" id="stSize" min="36" max="180" value="${sel.size||72}" /></div>
+        <div class="muted-note">Veloc. en nudos: media barba=5, barba=10, banderín=50. Calma (&lt;3 kt) = círculo.</div>
+      </div>`);
+    panelBody.appendChild(wrap);
+    const bindText = (id, key) => { const e = $(id); e.oninput = () => { sel[key] = e.value; editor.render(); }; e.onchange = commit; };
+    const bindNum = (id, key) => { const e = $(id); e.oninput = () => { sel[key] = parseFloat(e.value) || 0; editor.render(); }; e.onchange = commit; };
+    bindText("stTemp", "temp"); bindText("stDew", "dewpoint"); bindText("stPres", "pressure");
+    bindNum("stDir", "windDir"); bindNum("stSpd", "windSpeed");
+    $("stCover").onchange = (e) => { sel.cover = parseInt(e.target.value, 10); editor.render(); commit(); };
+    $("stWx").onchange = (e) => { sel.presentWx = e.target.value; editor.render(); commit(); };
+    $("stHem").onchange = (e) => { sel.hemisphere = e.target.value; editor.setStyle({ hemisphere: e.target.value }); editor.render(); commit(); };
+    const col = $("stColor");
+    col.oninput = () => { sel.color = col.value; editor.render(); };
+    col.onchange = commit;
+    const sz = $("stSize");
+    sz.oninput = () => { sel.size = parseInt(sz.value, 10); $("stSizeVal").textContent = sel.size; editor.render(); };
+    sz.onchange = commit;
+  }
+
   function buildImageControls(sel) {
     const wrap = el(`<div class="muted-note">Imagen de fondo. Puedes moverla y redimensionarla con los tiradores. Carga una nueva imagen desde la barra superior para reemplazarla.</div>`);
     panelBody.appendChild(wrap);
@@ -2058,6 +2414,7 @@ input[type="range"] { width: 100%; }
       text: "Texto", textbox: "Caja de texto", rect: "Rectángulo", ellipse: "Elipse",
       polygon: "Área / polígono", polyline: "Poli-línea", freehand: "Trazo libre",
       arrow: "Flecha", front: "Frente", image: "Imagen de fondo",
+      station: "Estación meteorológica",
     })[t] || "Propiedades";
   }
 
@@ -2147,7 +2504,7 @@ input[type="range"] { width: 100%; }
     }
 
     // tool shortcuts
-    const map = { v: "select", t: "text", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse" };
+    const map = { v: "select", t: "text", b: "place-textbox", a: "arrow", l: "polyline", p: "freehand", g: "polygon", r: "rect", e: "ellipse", s: "station" };
     if (map[e.key.toLowerCase()] && !e.ctrlKey && !e.metaKey) {
       editor.setTool(map[e.key.toLowerCase()]);
       selectToolBtn(map[e.key.toLowerCase()]);

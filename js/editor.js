@@ -295,9 +295,8 @@
         ctx.lineWidth = 1.5 / this._screenScale;
         ctx.stroke();
       }
-    } else {
-      for (const h of this._handleRects(s)) {
-        ctx.beginPath();
+    } else if (s.type !== "station") {
+      for (const h of this._handleRects(s)) {        ctx.beginPath();
         ctx.rect(h.x - h.r, h.y - h.r, h.r * 2, h.r * 2);
         ctx.fillStyle = "#ffffff";
         ctx.fill();
@@ -325,6 +324,7 @@
       }
       return null;
     }
+    if (s.type === "station") return null;
     for (const h of this._handleRects(s)) {
       if (Math.abs(p.x - h.x) <= tol && Math.abs(p.y - h.y) <= tol) return { handle: h.name };
     }
@@ -407,6 +407,18 @@
       this._emitChange();
       this.setTool("select");
       if (this.onEditText) this.onEditText(s);
+      return;
+    }
+
+    if (tool === "station") {
+      const s = Shapes.create("station", this.style);
+      s.x = p.x; s.y = p.y;
+      this.objects.push(s);
+      this.selectedId = s.id;
+      this.pushHistory();
+      this.render();
+      this._emitChange();
+      this.setTool("select");
       return;
     }
   };
