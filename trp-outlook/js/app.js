@@ -51,7 +51,7 @@
       borderColor: '#5b6675', borderWidth: 1,
       showProvinces: false, provinceColor: '#8a93a3', provinceWidth: 0.6,
       showMunicipios: false, municipioColor: '#9aa3b2', municipioWidth: 0.4,
-      municipioMinZoom: 7, showMunicipioLabels: true, municipioLabelMinZoom: 8, municipioLabelColor: '#39414f',
+      municipioMinZoom: 7, showMunicipioLabels: true, municipioLabelMinZoom: 9, municipioLabelColor: '#39414f',
       showCities: true, cityRank: 2, showCityLabels: true,
       cityDotColor: '#243042', cityLabelColor: '#16202e', cityLabelSize: 12,
       cityLabelStroke: '#ffffff', cityLabelStrokeWidth: 2, cityLabelFont: 'sans-serif', cityLabelBold: true, cityLabelItalic: false,
@@ -328,13 +328,27 @@
     if (!map || map.getZoom() < cfg.municipioLabelMinZoom) return;
     var bounds = map.getBounds();
     var g = L.layerGroup([], { pane: 'muniLabels' });
+    var placed = [];   // cajas ya colocadas (px) para evitar superposición
     var count = 0;
-    data.features.forEach(function (f) {
-      if (count > 400 || !f.geometry) return;
-      var name = muniName(f.properties); if (!name) return;
+    var feats = data.features || [];
+    for (var fi = 0; fi < feats.length && count < 300; fi++) {
+      var f = feats[fi];
+      if (!f.geometry) continue;
+      var name = muniName(f.properties); if (!name) continue;
       var c = approxCentroid(f);
       var ll = L.latLng(c[1], c[0]);
-      if (!bounds.contains(ll)) return;
+      if (!bounds.contains(ll)) continue;
+      // anti-superposición: descarta la etiqueta si su caja choca con otra ya puesta
+      var pt = map.latLngToContainerPoint(ll);
+      var w = Math.max(22, name.length * 6.3), h = 14;
+      var bx = pt.x - w / 2, by = pt.y - h / 2;
+      var hit = false;
+      for (var pj = 0; pj < placed.length; pj++) {
+        var b = placed[pj];
+        if (!(bx + w < b.x || bx > b.x + b.w || by + h < b.y || by > b.y + b.h)) { hit = true; break; }
+      }
+      if (hit) continue;
+      placed.push({ x: bx, y: by, w: w, h: h });
       count++;
       var st = { fill: cfg.municipioLabelColor, stroke: '#ffffff', strokeWidth: 1.5, font: cfg.cityLabelFont, size: 11, bold: false, italic: false };
       var m = L.marker(ll, {
@@ -342,7 +356,7 @@
         icon: L.divIcon({ className: 'muni-label', html: '<span style="' + textStyleCss(st) + '">' + escapeHtml(name) + '</span>', iconSize: null })
       });
       g.addLayer(m);
-    });
+    }
     g.addTo(map); layers.municipioLabels = g;
   }
   function renderMuni() { renderMunicipios(); renderMunicipioLabels(); }
