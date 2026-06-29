@@ -8,6 +8,27 @@ Los outlooks se recortan automáticamente a los límites de Argentina y Paraguay
 
 ---
 
+## Archivo único (doble clic, sin servidor)
+
+Si querés **todo en un solo archivo**, usá **`trp-outlook-standalone.html`**: tiene el
+CSS y el JavaScript embebidos. Lo abrís con **doble clic** y funciona (no hace falta
+Python ni servidor). Leaflet/Turf y los límites de países se cargan por CDN y el
+navegador los cachea, así que tras la primera carga el modo *Vectorial personalizado*
+anda también sin conexión. (Los fondos OSM/Satélite/Topográfico sí requieren internet.)
+
+Para regenerarlo si cambiás el código:
+```bash
+python3 build_standalone.py
+```
+
+¿Querés una versión **100% offline** (con Leaflet, Turf y los límites también
+embebidos)? Ejecutá una vez **con internet**:
+```bash
+python3 build_standalone.py --offline
+```
+
+---
+
 ## Cómo ejecutarla
 
 No requiere instalación ni compilación. Es HTML + CSS + JavaScript puro.
