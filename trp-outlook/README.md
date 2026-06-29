@@ -153,3 +153,14 @@ También hay un botón **"Descargar municipios (AR/PY)"** para usarlos sobre cua
 base. Requiere internet la primera vez (luego quedan en caché en el navegador).
 
 > Atribución requerida por la fuente: *Boundaries © geoBoundaries (CC BY 4.0)*.
+
+
+### 🔠 Fuente Open Sans + itálica
+Se agregó **Open Sans** (con sus pesos e itálica) a los selectores de fuente del texto
+y de las etiquetas de ciudades, además de una opción **itálica** en ambos.
+
+### 🔎 Municipios por zoom + nombres
+Los municipios pueden configurarse para **aparecer solo al acercar el zoom**
+(*Zoom mínimo municipios*), y sus **nombres** se muestran al superar otro umbral de zoom
+(*Mostrar nombres / Zoom mínimo nombres*), con color configurable. Las etiquetas se
+limitan al área visible para mantener el rendimiento.

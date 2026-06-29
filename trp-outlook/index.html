@@ -7,6 +7,9 @@
 
   <!-- Leaflet (CDN). Se cachea en el navegador tras la primera carga. -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;0,800;1,400;1,600;1,700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -95,6 +98,10 @@
           <div class="ctl"><label><input type="checkbox" id="showMunicipios" /> Mostrar municipios / dptos.</label></div>
           <div class="ctl"><label>Color municipios</label><input type="color" id="municipioColor" /></div>
           <div class="ctl"><label>Grosor municipios</label><input type="range" id="municipioWidth" min="0.1" max="2" step="0.1" /><span class="val" id="municipioWidthVal"></span></div>
+          <div class="ctl"><label>Zoom mínimo municipios</label><input type="range" id="municipioMinZoom" min="4" max="12" step="1" /><span class="val" id="municipioMinZoomVal"></span></div>
+          <div class="ctl"><label><input type="checkbox" id="showMunicipioLabels" /> Mostrar nombres (con zoom)</label></div>
+          <div class="ctl"><label>Zoom mínimo nombres</label><input type="range" id="municipioLabelMinZoom" min="5" max="14" step="1" /><span class="val" id="municipioLabelMinZoomVal"></span></div>
+          <div class="ctl"><label>Color nombres municipios</label><input type="color" id="municipioLabelColor" /></div>
           <button id="loadAdminBtn" class="btn btn-sm" style="width:100%;margin-top:4px;">⬇ Descargar municipios (AR/PY)</button>
           <p class="hint">Descarga provincias y municipios reales de <b>geoBoundaries</b> (necesita internet la 1ª vez; luego quedan en caché). O usá el mapa base <b>Vectorial detallado</b>.</p>
 
@@ -115,6 +122,7 @@
           <div class="ctl"><label>Fuente etiqueta</label>
             <select id="cityLabelFont" class="select select-sm">
               <option value="sans-serif">Sans-serif</option>
+              <option value="'Open Sans', sans-serif">Open Sans</option>
               <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
               <option value="'Arial Narrow', sans-serif">Arial Narrow</option>
               <option value="Georgia, serif">Georgia</option>
@@ -125,6 +133,7 @@
           </div>
           <div class="ctl"><label>Tamaño etiqueta</label><input type="range" id="cityLabelSize" min="8" max="24" step="1" /><span class="val" id="cityLabelSizeVal"></span></div>
           <div class="ctl"><label><input type="checkbox" id="cityLabelBold" /> Etiqueta en negrita</label></div>
+          <div class="ctl"><label><input type="checkbox" id="cityLabelItalic" /> Etiqueta en itálica</label></div>
 
           <hr class="div" />
           <div class="ctl"><label><input type="checkbox" id="showCountryLabels" /> Etiquetas de países</label></div>
@@ -176,6 +185,7 @@
           <div class="ctl"><label>Fuente</label>
             <select id="textFont" class="select select-sm">
               <option value="sans-serif">Sans-serif</option>
+              <option value="'Open Sans', sans-serif">Open Sans</option>
               <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
               <option value="'Arial Narrow', sans-serif">Arial Narrow</option>
               <option value="Georgia, serif">Georgia</option>
@@ -186,6 +196,7 @@
           </div>
           <div class="ctl"><label>Tamaño</label><input type="range" id="textSize" min="8" max="48" step="1" /><span class="val" id="textSizeVal"></span></div>
           <div class="ctl"><label><input type="checkbox" id="textBold" /> Negrita</label></div>
+          <div class="ctl"><label><input type="checkbox" id="textItalic" /> Itálica</label></div>
           <button id="clearTextsBtn" class="btn btn-sm btn-warn" style="width:100%;margin-top:6px;">🧹 Borrar todos los textos</button>
         </div>
       </section>
