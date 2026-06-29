@@ -102,6 +102,7 @@
   var currentLevel = 'SLGT';
   var legendControl = null;
   var textMode = false;
+  var muniDbgLogged = false;
 
   // dibujo
   var drawing = false;
@@ -292,12 +293,38 @@
   // Nombres de municipios visibles al acercar el zoom (limitado al viewport).
   function muniName(p) {
     if (!p) return '';
-    return p.shapeName || p.NAME_2 || p.name || p.nombre || p.NAM || p.NAME || p.departamento || '';
+    var keys = ['shapeName', 'name', 'nombre', 'NOMBRE', 'Nombre', 'NAME', 'NAME_2', 'NAME_1', 'NAM', 'nam',
+      'departamento', 'Departamento', 'depto', 'DEPTO', 'municipio', 'Municipio', 'partido', 'PARTIDO',
+      'distrito', 'DISTRITO', 'localidad', 'fna', 'FNA', 'gna', 'GNA', 'toponimo', 'label', 'LABEL'];
+    for (var i = 0; i < keys.length; i++) {
+      if (p[keys[i]] != null && String(p[keys[i]]).trim() !== '') return String(p[keys[i]]);
+    }
+    // búsqueda por patrón en los nombres de las propiedades
+    for (var k in p) {
+      if (/nomb|name|nam$|depto|departam|municip|partido|distrito|localidad|fna|gna|topon|label|titulo/i.test(k)) {
+        var v = p[k];
+        if (v != null && typeof v !== 'object') { var s = String(v).trim(); if (s && !/^\d+$/.test(s)) return s; }
+      }
+    }
+    // último recurso: primer texto razonable (no numérico)
+    for (var k2 in p) {
+      var v2 = p[k2];
+      if (typeof v2 === 'string') { var s2 = v2.trim(); if (s2.length >= 1 && s2.length <= 60 && !/^\d+(\.\d+)?$/.test(s2)) return s2; }
+    }
+    return '';
   }
   function renderMunicipioLabels() {
     if (layers.municipioLabels) { map.removeLayer(layers.municipioLabels); layers.municipioLabels = null; }
     var data = adminData.adm2 || municipioGeoJSON;
     if (!cfg.showMunicipios || !cfg.showMunicipioLabels || !data) return;
+    // Diagnóstico (una vez): muestra en consola las propiedades del 1er municipio.
+    if (!muniDbgLogged && data.features && data.features.length) {
+      muniDbgLogged = true;
+      try {
+        var p0 = data.features[0].properties || {};
+        console.info('[TRP] Propiedades del 1er municipio:', Object.keys(p0), '→ nombre detectado:', JSON.stringify(muniName(p0)));
+      } catch (e) {}
+    }
     if (!map || map.getZoom() < cfg.municipioLabelMinZoom) return;
     var bounds = map.getBounds();
     var g = L.layerGroup([], { pane: 'muniLabels' });
@@ -1091,6 +1118,7 @@
     rd.onload = function () {
       try {
         municipioGeoJSON = JSON.parse(rd.result);
+        muniDbgLogged = false;
         try { localStorage.setItem(LS.muni, rd.result); } catch (x) {}
         if (!cfg.showMunicipios) { cfg.showMunicipios = true; setCheck('showMunicipios', true); saveConfig(); }
         renderMuni(); toast('Municipios cargados (usan su propio grosor).', 'ok');
