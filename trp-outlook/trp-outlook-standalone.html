@@ -258,6 +258,12 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 /* Cursor de cruz mientras se dibuja un outlook */
 .leaflet-crosshair, .leaflet-crosshair .leaflet-interactive { cursor: crosshair; }
 
+
+/* Etiquetas de texto colocadas en el mapa */
+.text-anno { background: transparent; border: none; white-space: nowrap; line-height: 1.15; cursor: move; }
+.text-anno span { display: inline-block; }
+.text-anno.selected { outline: 2px dashed #2f9bff; outline-offset: 3px; border-radius: 3px; }
+
 </style>
 </head>
 <body>
@@ -316,6 +322,7 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
           <label class="field-label" for="basemapSelect">Mapa base</label>
           <select id="basemapSelect" class="select">
             <option value="vector">Vectorial personalizado (offline)</option>
+            <option value="vectordetail">Vectorial detallado (con municipios)</option>
             <option value="osm">OpenStreetMap</option>
             <option value="topo">Topográfico</option>
             <option value="satellite">Satélite</option>
@@ -341,6 +348,12 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
           <div class="ctl"><label><input type="checkbox" id="showProvinces" /> Mostrar provincias</label></div>
           <div class="ctl"><label>Color provincias</label><input type="color" id="provinceColor" /></div>
           <div class="ctl"><label>Grosor provincias</label><input type="range" id="provinceWidth" min="0.1" max="3" step="0.1" /><span class="val" id="provinceWidthVal"></span></div>
+
+          <div class="ctl"><label><input type="checkbox" id="showMunicipios" /> Mostrar municipios / dptos.</label></div>
+          <div class="ctl"><label>Color municipios</label><input type="color" id="municipioColor" /></div>
+          <div class="ctl"><label>Grosor municipios</label><input type="range" id="municipioWidth" min="0.1" max="2" step="0.1" /><span class="val" id="municipioWidthVal"></span></div>
+          <button id="loadAdminBtn" class="btn btn-sm" style="width:100%;margin-top:4px;">⬇ Descargar municipios (AR/PY)</button>
+          <p class="hint">Descarga provincias y municipios reales de <b>geoBoundaries</b> (necesita internet la 1ª vez; luego quedan en caché). O usá el mapa base <b>Vectorial detallado</b>.</p>
 
           <hr class="div" />
           <div class="ctl"><label><input type="checkbox" id="showCities" /> Mostrar ciudades</label></div>
@@ -387,6 +400,36 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
             <button id="presetVivid" class="btn btn-sm">Preset vívido (barra)</button>
             <button id="presetOfficial" class="btn btn-sm">Preset relleno oficial</button>
           </div>
+        </div>
+      </section>
+
+      <!-- Texto y etiquetas -->
+      <section class="panel" data-panel="text">
+        <h2 class="panel-title"><span>🔤 Texto y etiquetas</span><span class="chev">▾</span></h2>
+        <div class="panel-body">
+          <div class="btn-row">
+            <button id="textBtn" class="btn btn-primary">🔤 Agregar texto</button>
+            <button id="deleteTextBtn" class="btn btn-sm btn-warn" disabled>🗑 Borrar</button>
+          </div>
+          <p class="hint">Tocá <b>Agregar texto</b> y hacé clic en el mapa para escribir. Arrastrá para mover, doble clic para editar, clic para seleccionar.</p>
+          <hr class="div" />
+          <div class="ctl"><label>Color de relleno</label><input type="color" id="textFill" /></div>
+          <div class="ctl"><label>Color de trazo exterior</label><input type="color" id="textStroke" /></div>
+          <div class="ctl"><label>Grosor de trazo</label><input type="range" id="textStrokeWidth" min="0" max="6" step="0.5" /><span class="val" id="textStrokeWidthVal"></span></div>
+          <div class="ctl"><label>Fuente</label>
+            <select id="textFont" class="select select-sm">
+              <option value="sans-serif">Sans-serif</option>
+              <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+              <option value="'Arial Narrow', sans-serif">Arial Narrow</option>
+              <option value="Georgia, serif">Georgia</option>
+              <option value="serif">Serif</option>
+              <option value="'Courier New', monospace">Monospace</option>
+              <option value="Impact, sans-serif">Impact</option>
+            </select>
+          </div>
+          <div class="ctl"><label>Tamaño</label><input type="range" id="textSize" min="8" max="48" step="1" /><span class="val" id="textSizeVal"></span></div>
+          <div class="ctl"><label><input type="checkbox" id="textBold" /> Negrita</label></div>
+          <button id="clearTextsBtn" class="btn btn-sm btn-warn" style="width:100%;margin-top:6px;">🧹 Borrar todos los textos</button>
         </div>
       </section>
 
@@ -739,7 +782,7 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   'use strict';
 
   /* ----------------------- Constantes ----------------------- */
-  var LS = { config: 'trp_config_v2', geo: 'trp_geo_50m_v1', outlook: 'trp_outlook_v1', prov: 'trp_prov_v1' };
+  var LS = { config: 'trp_config_v2', geo: 'trp_geo_50m_v1', outlook: 'trp_outlook_v1', prov: 'trp_prov_v1', adm: 'trp_adm_v1', texts: 'trp_texts_v1' };
 
   // Niveles SPC en orden ascendente de severidad.
   var LEVELS = [
@@ -782,6 +825,7 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
       water: '#9ec9ea', land: '#e9e4d6', neighbor: '#d7dbe0',
       borderColor: '#5b6675', borderWidth: 1,
       showProvinces: false, provinceColor: '#8a93a3', provinceWidth: 0.6,
+      showMunicipios: false, municipioColor: '#9aa3b2', municipioWidth: 0.4,
       showCities: true, cityRank: 2, showCityLabels: true,
       cityDotColor: '#243042', cityLabelColor: '#16202e', cityLabelSize: 12,
       showCountryLabels: true,
@@ -793,7 +837,8 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
       legendTitle: 'Riesgo de tiempo severo',
       showOutlookHeader: false,
       outlookTitle: 'Pronóstico de Tiempo Severo — Argentina & Paraguay',
-      outlookValid: ''
+      outlookValid: '',
+      text: { fill: '#111111', stroke: '#ffffff', strokeWidth: 2, font: 'sans-serif', size: 16, bold: true }
     };
   }
 
@@ -808,6 +853,7 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
       var merged = Object.assign(d, saved);
       merged.fills = Object.assign({}, PRESET_VIVID, saved.fills || {});
       merged.strokes = Object.assign({}, STROKES, saved.strokes || {});
+      merged.text = Object.assign({}, d.text, saved.text || {});
       return merged;
     } catch (e) { return defaultConfig(); }
   }
@@ -816,13 +862,18 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   /* ----------------------- Estado ----------------------- */
   var map, panes = {};
   var tileLayer = null;
-  var layers = { neighbors: null, countries: null, provinces: null, graticule: null, outlooks: null, cities: null, countryLabels: null };
+  var layers = { neighbors: null, countries: null, provinces: null, municipios: null, graticule: null, outlooks: null, cities: null, countryLabels: null, texts: null };
   var geo = { ar: null, py: null, neighbors: [], fallback: false };
   var provinceGeoJSON = null;
+  var adminData = { adm1: null, adm2: null };  // geoBoundaries (municipios/provincias)
+  var admLoading = false;
   var outlooks = [];            // { id, level, geometry }
+  var texts = [];               // { id, lat, lng, text, style }
   var selectedId = null;
+  var selectedTextId = null;
   var currentLevel = 'SLGT';
   var legendControl = null;
+  var textMode = false;
 
   // dibujo
   var drawing = false;
@@ -873,14 +924,15 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     });
     map.attributionControl.setPrefix('TRP Meteorología');
 
-    [['neighbors', 250], ['countries', 300], ['provinces', 350],
-     ['graticule', 360], ['outlooks', 420], ['countryLabels', 640]].forEach(function (p) {
+    [['neighbors', 250], ['countries', 300], ['municipios', 340], ['provinces', 350],
+     ['graticule', 360], ['outlooks', 420], ['countryLabels', 630], ['texts', 650]].forEach(function (p) {
       var pane = map.createPane(p[0]); pane.style.zIndex = p[1];
       panes[p[0]] = pane;
       if (p[0] === 'countryLabels') pane.style.pointerEvents = 'none';
     });
 
     layers.outlooks = L.featureGroup([], { pane: 'outlooks' }).addTo(map);
+    layers.texts = L.featureGroup([], { pane: 'texts' }).addTo(map);
 
     map.on('mousemove', function (e) {
       $('coordReadout').textContent = 'lat ' + e.latlng.lat.toFixed(2) + ', lon ' + e.latlng.lng.toFixed(2);
@@ -890,7 +942,7 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     map.on('dblclick', function () { if (drawing) { clearTimeout(clickTimer); finishDrawing(); } });
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && drawing) cancelDrawing();
+      if (e.key === 'Escape') { if (drawing) cancelDrawing(); else if (textMode) stopTextMode(); }
       else if (e.key === 'Enter' && drawing) finishDrawing();
     });
   }
@@ -899,12 +951,13 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   function setBasemap(mode) {
     cfg.basemap = mode; saveConfig();
     if (tileLayer) { map.removeLayer(tileLayer); tileLayer = null; }
-    var vectorMode = (mode === 'vector');
+    var vectorMode = (mode === 'vector' || mode === 'vectordetail');
 
     if (vectorMode) {
       applyWaterColor();
       renderVectorBasemap();
       renderCountryLabels();
+      if (mode === 'vectordetail') loadAdminDetail();
     } else {
       // ocultar capas vectoriales de fondo
       if (layers.neighbors) { map.removeLayer(layers.neighbors); layers.neighbors = null; }
@@ -920,16 +973,17 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
       }
     }
     // overlays funcionan en cualquier base
-    renderProvinces(); renderGraticule(); renderCities(); restyleOutlooks();
+    renderProvinces(); renderMunicipios(); renderGraticule(); renderCities(); restyleOutlooks(); renderTexts();
   }
 
   function applyWaterColor() {
     var el = map.getContainer();
-    el.style.background = (cfg.basemap === 'vector') ? cfg.water : '#000';
+    var vec = (cfg.basemap === 'vector' || cfg.basemap === 'vectordetail');
+    el.style.background = vec ? cfg.water : '#000';
   }
 
   function renderVectorBasemap() {
-    if (cfg.basemap !== 'vector') return;
+    if (cfg.basemap !== 'vector' && cfg.basemap !== 'vectordetail') return;
     if (layers.neighbors) { map.removeLayer(layers.neighbors); layers.neighbors = null; }
     if (layers.countries) { map.removeLayer(layers.countries); layers.countries = null; }
 
@@ -952,7 +1006,7 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 
   function renderCountryLabels() {
     if (layers.countryLabels) { map.removeLayer(layers.countryLabels); layers.countryLabels = null; }
-    if (cfg.basemap !== 'vector' || !cfg.showCountryLabels) return;
+    if ((cfg.basemap !== 'vector' && cfg.basemap !== 'vectordetail') || !cfg.showCountryLabels) return;
     var g = L.layerGroup([], { pane: 'countryLabels' });
     [['Argentina', geo.ar], ['Paraguay', geo.py]].forEach(function (pair) {
       if (!pair[1]) return;
@@ -964,14 +1018,95 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     g.addTo(map); layers.countryLabels = g;
   }
 
-  /* ----------------------- Provincias ----------------------- */
+  /* ----------------------- Provincias y municipios ----------------------- */
   function renderProvinces() {
     if (layers.provinces) { map.removeLayer(layers.provinces); layers.provinces = null; }
-    if (!cfg.showProvinces || !provinceGeoJSON) return;
-    layers.provinces = L.geoJSON(provinceGeoJSON, {
+    if (!cfg.showProvinces) return;
+    var data = adminData.adm1 || provinceGeoJSON;
+    if (!data) return;
+    layers.provinces = L.geoJSON(data, {
       pane: 'provinces',
       style: { color: cfg.provinceColor, weight: cfg.provinceWidth, fill: false, dashArray: '3,3' }
     }).addTo(map);
+  }
+
+  function renderMunicipios() {
+    if (layers.municipios) { map.removeLayer(layers.municipios); layers.municipios = null; }
+    if (!cfg.showMunicipios || !adminData.adm2) return;
+    layers.municipios = L.geoJSON(adminData.adm2, {
+      pane: 'municipios',
+      style: { color: cfg.municipioColor, weight: cfg.municipioWidth, fill: false }
+    }).addTo(map);
+  }
+
+  // Descarga ADM1 (provincias/departamentos) y ADM2 (municipios/distritos)
+  // de Argentina y Paraguay desde geoBoundaries (gbOpen, CC BY 4.0).
+  function loadAdminDetail(force) {
+    if (admLoading) return;
+    if (adminData.adm1 && adminData.adm2 && !force) { renderProvinces(); renderMunicipios(); return; }
+
+    // caché local
+    if (!force) {
+      try {
+        var c = localStorage.getItem(LS.adm);
+        if (c) {
+          var o = JSON.parse(c);
+          if (o && o.adm1 && o.adm2) {
+            adminData.adm1 = o.adm1; adminData.adm2 = o.adm2;
+            setStatus('Municipios en caché', 'badge-ok');
+            afterAdmin(); return;
+          }
+        }
+      } catch (e) {}
+    }
+
+    admLoading = true;
+    setStatus('Descargando municipios…', 'badge-muted');
+    toast('Descargando provincias y municipios de AR/PY (geoBoundaries). Puede tardar unos segundos…');
+    Promise.all([
+      fetchAdmin('ARG', 'ADM1'), fetchAdmin('PRY', 'ADM1'),
+      fetchAdmin('ARG', 'ADM2'), fetchAdmin('PRY', 'ADM2')
+    ]).then(function (res) {
+      adminData.adm1 = mergeFC([res[0], res[1]]);
+      adminData.adm2 = mergeFC([res[2], res[3]]);
+      try { localStorage.setItem(LS.adm, JSON.stringify({ adm1: adminData.adm1, adm2: adminData.adm2 })); } catch (e) { /* cuota */ }
+      try { map.attributionControl.addAttribution('Límites admin.: geoBoundaries (CC BY 4.0)'); } catch (e) {}
+      setStatus('Municipios cargados (geoBoundaries)', 'badge-ok');
+      admLoading = false; afterAdmin();
+      toast('Provincias y municipios cargados.', 'ok');
+    }).catch(function (err) {
+      admLoading = false;
+      console.warn('geoBoundaries:', err);
+      setStatus('Sin municipios (error de descarga)', 'badge-err');
+      toast('No se pudieron descargar los municipios (sin conexión o fuente no disponible).', 'err');
+    });
+
+    function afterAdmin() {
+      if (!cfg.showProvinces) { cfg.showProvinces = true; setCheck('showProvinces', true); }
+      if (!cfg.showMunicipios) { cfg.showMunicipios = true; setCheck('showMunicipios', true); }
+      saveConfig(); renderProvinces(); renderMunicipios();
+    }
+  }
+
+  function fetchAdmin(iso, level) {
+    var api = 'https://www.geoboundaries.org/api/current/gbOpen/' + iso + '/' + level + '/';
+    return fetch(api).then(function (r) {
+      if (!r.ok) throw new Error('API ' + iso + ' ' + level + ': ' + r.status);
+      return r.json();
+    }).then(function (meta) {
+      if (Array.isArray(meta)) meta = meta[0];
+      var url = meta.simplifiedGeometryGeoJSON || meta.gjDownloadURL;
+      if (!url) throw new Error('Sin URL de descarga para ' + iso + ' ' + level);
+      return fetch(url).then(function (r) {
+        if (!r.ok) throw new Error('GeoJSON ' + iso + ' ' + level + ': ' + r.status);
+        return r.json();
+      });
+    });
+  }
+  function mergeFC(list) {
+    var feats = [];
+    list.forEach(function (fc) { if (fc && fc.features) feats = feats.concat(fc.features); });
+    return { type: 'FeatureCollection', features: feats };
   }
 
   /* ----------------------- Ciudades ----------------------- */
@@ -1013,6 +1148,7 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   /* ----------------------- Dibujo de outlooks ----------------------- */
   function startDrawing() {
     if (drawing) return;
+    if (textMode) stopTextMode();
     drawing = true;
     drawPts = [];
     map.doubleClickZoom.disable();
@@ -1039,7 +1175,12 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     $('drawState').textContent = '';
   }
   function onMapClick(e) {
-    if (!drawing) return;
+    if (textMode) { placeTextAt(e.latlng); return; }
+    if (!drawing) {
+      if (selectedId) clearSelection();
+      if (selectedTextId) clearTextSelection();
+      return;
+    }
     clearTimeout(clickTimer);
     var ll = e.latlng;
     clickTimer = setTimeout(function () { addVertex(ll); }, 220);
@@ -1195,7 +1336,9 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   function findOutlook(id) { for (var i = 0; i < outlooks.length; i++) if (outlooks[i].id === id) return outlooks[i]; return null; }
 
   function selectOutlook(id) {
-    selectedId = id; refreshSelectionStyle();
+    selectedId = id; selectedTextId = null;
+    $('deleteTextBtn').disabled = true; renderTexts();
+    refreshSelectionStyle();
     var o = findOutlook(id);
     $('selectedBox').hidden = !o;
     $('deleteSelBtn').disabled = !o;
@@ -1256,6 +1399,90 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     ov.hidden = false;
     $('ohTitle').textContent = cfg.outlookTitle || '';
     $('ohValid').textContent = cfg.outlookValid || '';
+  }
+
+  /* ----------------------- Texto / etiquetas ----------------------- */
+  function textStyleCss(st) {
+    var halo = (st.strokeWidth > 0)
+      ? ('-webkit-text-stroke:' + st.strokeWidth + 'px ' + st.stroke + ';paint-order:stroke fill;')
+      : '';
+    return 'color:' + st.fill + ';font-family:' + st.font + ';font-size:' + st.size + 'px;' +
+      (st.bold ? 'font-weight:700;' : 'font-weight:400;') + halo;
+  }
+  function findText(id) { for (var i = 0; i < texts.length; i++) if (texts[i].id === id) return texts[i]; return null; }
+  function persistTexts() { try { localStorage.setItem(LS.texts, JSON.stringify(texts)); } catch (e) {} }
+  function loadTexts() { try { var r = localStorage.getItem(LS.texts); if (r) texts = JSON.parse(r) || []; } catch (e) { texts = []; } }
+
+  function renderTexts() {
+    if (!layers.texts) return;
+    layers.texts.clearLayers();
+    texts.forEach(function (it) {
+      var sel = (it.id === selectedTextId);
+      var icon = L.divIcon({
+        className: 'text-anno' + (sel ? ' selected' : ''),
+        html: '<span style="' + textStyleCss(it.style) + '">' + escapeHtml(it.text) + '</span>',
+        iconSize: null
+      });
+      var m = L.marker([it.lat, it.lng], { icon: icon, draggable: true, pane: 'texts' });
+      m._tid = it.id;
+      m.on('click', function (ev) { L.DomEvent.stopPropagation(ev); selectText(it.id); });
+      m.on('dblclick', function (ev) { L.DomEvent.stop(ev); editText(it.id); });
+      m.on('dragend', function () { var ll = m.getLatLng(); it.lat = ll.lat; it.lng = ll.lng; persistTexts(); });
+      layers.texts.addLayer(m);
+    });
+  }
+  function startTextMode() {
+    if (drawing) { cancelDrawing(); stopDrawingUI(); }
+    textMode = true;
+    L.DomUtil.addClass(map.getContainer(), 'leaflet-crosshair');
+    $('textBtn').classList.add('active'); $('textBtn').textContent = '■ Colocando texto…';
+    $('drawState').textContent = 'Modo texto — hacé clic en el mapa para escribir (Esc para salir)';
+  }
+  function stopTextMode() {
+    textMode = false;
+    if (!drawing) L.DomUtil.removeClass(map.getContainer(), 'leaflet-crosshair');
+    $('textBtn').classList.remove('active'); $('textBtn').textContent = '🔤 Agregar texto';
+    $('drawState').textContent = '';
+  }
+  function placeTextAt(ll) {
+    var t = prompt('Texto de la etiqueta:', '');
+    if (t === null) return;
+    t = t.trim(); if (!t) return;
+    var item = { id: 't' + Date.now() + Math.floor(Math.random() * 1000), lat: ll.lat, lng: ll.lng, text: t, style: Object.assign({}, cfg.text) };
+    texts.push(item); persistTexts(); selectText(item.id); renderTexts();
+  }
+  function editText(id) {
+    var it = findText(id); if (!it) return;
+    var t = prompt('Editar texto:', it.text);
+    if (t === null) return; t = t.trim(); if (!t) return;
+    it.text = t; persistTexts(); renderTexts();
+  }
+  function selectText(id) {
+    selectedTextId = id; selectedId = null;
+    var it = findText(id);
+    $('deleteTextBtn').disabled = !it;
+    if (it) {
+      // refleja el estilo del texto seleccionado en los controles
+      cfg.text = Object.assign({}, it.style); saveConfig(); syncTextInputs();
+    }
+    refreshSelectionStyle(); renderTexts();
+  }
+  function clearTextSelection() { selectedTextId = null; $('deleteTextBtn').disabled = true; renderTexts(); }
+  function deleteSelectedText() {
+    if (!selectedTextId) return;
+    texts = texts.filter(function (t) { return t.id !== selectedTextId; });
+    selectedTextId = null; $('deleteTextBtn').disabled = true; persistTexts(); renderTexts();
+  }
+  function clearAllTexts() {
+    if (!texts.length) return;
+    if (!confirm('¿Borrar todos los textos?')) return;
+    texts = []; selectedTextId = null; $('deleteTextBtn').disabled = true; persistTexts(); renderTexts();
+  }
+  function syncTextInputs() {
+    setVal('textFill', cfg.text.fill); setVal('textStroke', cfg.text.stroke);
+    setRange('textStrokeWidth', cfg.text.strokeWidth, 'textStrokeWidthVal');
+    setVal('textFont', cfg.text.font); setRange('textSize', cfg.text.size, 'textSizeVal');
+    setCheck('textBold', cfg.text.bold);
   }
 
   /* ----------------------- Carga de datos geográficos ----------------------- */
@@ -1384,6 +1611,8 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     setVal('borderColor', cfg.borderColor); setRange('borderWidth', cfg.borderWidth, 'borderWidthVal');
     setCheck('showProvinces', cfg.showProvinces); setVal('provinceColor', cfg.provinceColor);
     setRange('provinceWidth', cfg.provinceWidth, 'provinceWidthVal');
+    setCheck('showMunicipios', cfg.showMunicipios); setVal('municipioColor', cfg.municipioColor);
+    setRange('municipioWidth', cfg.municipioWidth, 'municipioWidthVal');
     setCheck('showCities', cfg.showCities); setVal('cityRank', String(cfg.cityRank));
     setCheck('showCityLabels', cfg.showCityLabels); setVal('cityDotColor', cfg.cityDotColor);
     setVal('cityLabelColor', cfg.cityLabelColor); setRange('cityLabelSize', cfg.cityLabelSize, 'cityLabelSizeVal');
@@ -1393,6 +1622,7 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     setCheck('showLegend', cfg.showLegend); setVal('legendPos', cfg.legendPos);
     setCheck('legendOnlyUsed', cfg.legendOnlyUsed); setVal('legendTitle', cfg.legendTitle);
     setCheck('showOutlookHeader', cfg.showOutlookHeader); setVal('outlookTitle', cfg.outlookTitle); setVal('outlookValid', cfg.outlookValid);
+    syncTextInputs();
   }
   function setVal(id, v) { var e = $(id); if (e) e.value = v; }
   function setCheck(id, v) { var e = $(id); if (e) e.checked = !!v; }
@@ -1437,6 +1667,10 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     bindCheck('showProvinces', 'showProvinces', renderProvinces);
     bindColor('provinceColor', 'provinceColor', renderProvinces);
     bindRange('provinceWidth', 'provinceWidth', 'provinceWidthVal', renderProvinces);
+    bindCheck('showMunicipios', 'showMunicipios', renderMunicipios);
+    bindColor('municipioColor', 'municipioColor', renderMunicipios);
+    bindRange('municipioWidth', 'municipioWidth', 'municipioWidthVal', renderMunicipios);
+    $('loadAdminBtn').addEventListener('click', function () { loadAdminDetail(true); });
     bindCheck('showCities', 'showCities', renderCities);
     bindSelectNum('cityRank', 'cityRank', renderCities);
     bindCheck('showCityLabels', 'showCityLabels', renderCities);
@@ -1470,6 +1704,17 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     bindText('outlookTitle', 'outlookTitle', updateOutlookHeader);
     bindText('outlookValid', 'outlookValid', updateOutlookHeader);
 
+    // texto y etiquetas
+    $('textBtn').addEventListener('click', function () { textMode ? stopTextMode() : startTextMode(); });
+    $('deleteTextBtn').addEventListener('click', deleteSelectedText);
+    $('clearTextsBtn').addEventListener('click', clearAllTexts);
+    bindTextStyle('textFill', 'fill', 'color');
+    bindTextStyle('textStroke', 'stroke', 'color');
+    bindTextStyle('textStrokeWidth', 'strokeWidth', 'range', 'textStrokeWidthVal');
+    bindTextStyle('textFont', 'font', 'select');
+    bindTextStyle('textSize', 'size', 'range', 'textSizeVal');
+    bindTextStyle('textBold', 'bold', 'check');
+
     // datos / archivos
     $('provinceFile').addEventListener('change', onProvinceFile);
     $('exportOutlookBtn').addEventListener('click', exportOutlook);
@@ -1479,15 +1724,15 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     $('reloadDataBtn').addEventListener('click', function () {
       try { localStorage.removeItem(LS.geo); } catch (e) {}
       setStatus('Recargando…', 'badge-muted');
-      loadGeo().then(function () { if (cfg.basemap === 'vector') { renderVectorBasemap(); renderCountryLabels(); } toast('Mapa base recargado.', 'ok'); });
+      loadGeo().then(function () { if (cfg.basemap === 'vector' || cfg.basemap === 'vectordetail') { renderVectorBasemap(); renderCountryLabels(); } toast('Mapa base recargado.', 'ok'); });
     });
     $('clearCacheBtn').addEventListener('click', function () {
-      [LS.geo, LS.prov].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      [LS.geo, LS.prov, LS.adm].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
       toast('Caché de datos borrada.', 'ok');
     });
     $('resetAllBtn').addEventListener('click', function () {
       if (!confirm('Restablecer toda la configuración y borrar las áreas dibujadas?')) return;
-      [LS.config, LS.outlook].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      [LS.config, LS.outlook, LS.texts].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
       location.reload();
     });
   }
@@ -1501,6 +1746,17 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   function bindRange(id, key, valId, render) {
     var e = $(id); if (!e) return;
     e.addEventListener('input', function () { cfg[key] = parseFloat(e.value); if (valId) $(valId).textContent = e.value; saveConfig(); render && render(); });
+  }
+  // Estilo de texto: actualiza cfg.text y, si hay un texto seleccionado, también ese.
+  function bindTextStyle(id, key, kind, valId) {
+    var e = $(id); if (!e) return;
+    var evt = (kind === 'check' || kind === 'select') ? 'change' : 'input';
+    e.addEventListener(evt, function () {
+      var v = (kind === 'check') ? e.checked : (kind === 'range' ? parseFloat(e.value) : e.value);
+      cfg.text[key] = v; if (valId) $(valId).textContent = e.value; saveConfig();
+      if (selectedTextId) { var t = findText(selectedTextId); if (t) { t.style[key] = v; persistTexts(); } }
+      renderTexts();
+    });
   }
 
   function applyTheme(name) {
@@ -1537,12 +1793,16 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 100);
   }
   function exportOutlook() {
+    var feats = outlooks.map(function (o) {
+      return { type: 'Feature', properties: { kind: 'outlook', level: o.level, name: LEVEL_BY_ID[o.level].name }, geometry: o.geometry };
+    });
+    texts.forEach(function (t) {
+      feats.push({ type: 'Feature', properties: { kind: 'text', text: t.text, style: t.style }, geometry: { type: 'Point', coordinates: [t.lng, t.lat] } });
+    });
     var fc = {
       type: 'FeatureCollection',
       properties: { title: cfg.outlookTitle, valid: cfg.outlookValid, generator: 'TRP Meteorología' },
-      features: outlooks.map(function (o) {
-        return { type: 'Feature', properties: { level: o.level, name: LEVEL_BY_ID[o.level].name }, geometry: o.geometry };
-      })
+      features: feats
     };
     download('outlook_trp.geojson', JSON.stringify(fc, null, 2));
   }
@@ -1553,16 +1813,23 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
       try {
         var fc = JSON.parse(rd.result);
         var feats = fc.features || [];
-        var added = 0;
+        var addedA = 0, addedT = 0;
         feats.forEach(function (f) {
           if (!f.geometry) return;
-          var lvl = (f.properties && f.properties.level) || 'SLGT';
-          if (!LEVEL_BY_ID[lvl]) lvl = 'SLGT';
-          outlooks.push({ id: 'o' + Date.now() + Math.floor(Math.random() * 100000), level: lvl, geometry: f.geometry });
-          added++;
+          if (f.geometry.type === 'Point' && f.properties && f.properties.kind === 'text') {
+            var c = f.geometry.coordinates;
+            texts.push({ id: 't' + Date.now() + Math.floor(Math.random() * 100000), lng: c[0], lat: c[1], text: f.properties.text || '', style: Object.assign({}, cfg.text, f.properties.style || {}) });
+            addedT++; return;
+          }
+          if (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon') {
+            var lvl = (f.properties && f.properties.level) || 'SLGT';
+            if (!LEVEL_BY_ID[lvl]) lvl = 'SLGT';
+            outlooks.push({ id: 'o' + Date.now() + Math.floor(Math.random() * 100000), level: lvl, geometry: f.geometry });
+            addedA++;
+          }
         });
-        persistOutlooks(); renderOutlooks(); updateLegend();
-        toast(added + ' área(s) importada(s).', 'ok');
+        persistOutlooks(); renderOutlooks(); persistTexts(); renderTexts(); updateLegend();
+        toast(addedA + ' área(s) y ' + addedT + ' texto(s) importados.', 'ok');
       } catch (x) { toast('Archivo de outlook inválido.', 'err'); }
     };
     rd.readAsText(file);
@@ -1601,13 +1868,17 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 
     // provincias cacheadas
     try { var pr = localStorage.getItem(LS.prov); if (pr) provinceGeoJSON = JSON.parse(pr); } catch (e) {}
+    // municipios/provincias en caché (geoBoundaries)
+    try { var ad = localStorage.getItem(LS.adm); if (ad) { var ao = JSON.parse(ad); if (ao && ao.adm1 && ao.adm2) adminData = ao; } } catch (e) {}
     loadOutlooks();
+    loadTexts();
 
     if (!window.turf) toast('No se cargó la librería de geometría (sin conexión). El recorte exacto a AR/PY estará limitado.', 'err');
 
     loadGeo().then(function () {
       setBasemap(cfg.basemap);
       renderOutlooks();
+      renderTexts();
       updateLegend();
       // ajustar vista a AR/PY
       try {

@@ -245,3 +245,9 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 
 /* Cursor de cruz mientras se dibuja un outlook */
 .leaflet-crosshair, .leaflet-crosshair .leaflet-interactive { cursor: crosshair; }
+
+
+/* Etiquetas de texto colocadas en el mapa */
+.text-anno { background: transparent; border: none; white-space: nowrap; line-height: 1.15; cursor: move; }
+.text-anno span { display: inline-block; }
+.text-anno.selected { outline: 2px dashed #2f9bff; outline-offset: 3px; border-radius: 3px; }

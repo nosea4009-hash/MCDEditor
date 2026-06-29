@@ -131,3 +131,25 @@ trp-meteorologia/
 - Límites: [Natural Earth](https://www.naturalearthdata.com/) (dominio público) vía `world-atlas`.
 - Mapa y dibujo: [Leaflet](https://leafletjs.com/). Geometría: [Turf.js](https://turfjs.org/).
 - Esquema de niveles y colores basado en el [SPC / NOAA](https://www.spc.noaa.gov/).
+
+
+---
+
+## Novedades
+
+### 🔤 Texto y etiquetas
+Panel **"Texto y etiquetas"**: tocá *Agregar texto*, hacé clic en el mapa y escribí.
+Cada etiqueta es personalizable: **color de relleno**, **color de trazo exterior**,
+**grosor del trazo**, **fuente** (varias opciones) y **tamaño** (+ negrita). Se pueden
+**arrastrar** para reposicionar, **doble clic** para editar y **clic** para seleccionar
+(y borrar). Los textos se guardan y se incluyen al exportar/importar el outlook.
+
+### 🗺️ Mapa "Vectorial detallado (con municipios)"
+Nuevo tipo de mapa que, además de todo lo personalizable del modo vectorial, descarga
+y muestra **provincias/departamentos (ADM1)** y **municipios/distritos (ADM2)** reales de
+Argentina y Paraguay desde **[geoBoundaries](https://www.geoboundaries.org/)** (licencia
+CC BY 4.0). Color y grosor de las líneas de municipios y provincias son configurables.
+También hay un botón **"Descargar municipios (AR/PY)"** para usarlos sobre cualquier mapa
+base. Requiere internet la primera vez (luego quedan en caché en el navegador).
+
+> Atribución requerida por la fuente: *Boundaries © geoBoundaries (CC BY 4.0)*.
