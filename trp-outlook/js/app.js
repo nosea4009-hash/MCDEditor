@@ -7,7 +7,7 @@
   'use strict';
 
   /* ----------------------- Constantes ----------------------- */
-  var LS = { config: 'trp_config_v2', geo: 'trp_geo_50m_v1', outlook: 'trp_outlook_v1', prov: 'trp_prov_v1', adm: 'trp_adm_v1', texts: 'trp_texts_v1' };
+  var LS = { config: 'trp_config_v2', geo: 'trp_geo_50m_v1', outlook: 'trp_outlook_v1', prov: 'trp_prov_v1', muni: 'trp_muni_v1', adm: 'trp_adm_v1', texts: 'trp_texts_v1' };
 
   // Niveles SPC en orden ascendente de severidad.
   var LEVELS = [
@@ -53,6 +53,7 @@
       showMunicipios: false, municipioColor: '#9aa3b2', municipioWidth: 0.4,
       showCities: true, cityRank: 2, showCityLabels: true,
       cityDotColor: '#243042', cityLabelColor: '#16202e', cityLabelSize: 12,
+      cityLabelStroke: '#ffffff', cityLabelStrokeWidth: 2, cityLabelFont: 'sans-serif', cityLabelBold: true,
       showCountryLabels: true,
       showGraticule: false, graticuleColor: '#9fb0c8', graticuleStep: 5,
       fillOpacity: 0.55, outlookStroke: 2,
@@ -87,9 +88,10 @@
   /* ----------------------- Estado ----------------------- */
   var map, panes = {};
   var tileLayer = null;
-  var layers = { neighbors: null, countries: null, provinces: null, municipios: null, graticule: null, outlooks: null, cities: null, countryLabels: null, texts: null };
+  var layers = { neighbors: null, countries: null, countryBorders: null, provinces: null, municipios: null, graticule: null, outlooks: null, cities: null, countryLabels: null, texts: null };
   var geo = { ar: null, py: null, neighbors: [], fallback: false };
   var provinceGeoJSON = null;
+  var municipioGeoJSON = null;
   var adminData = { adm1: null, adm2: null };  // geoBoundaries (municipios/provincias)
   var admLoading = false;
   var outlooks = [];            // { id, level, geometry }
@@ -149,8 +151,8 @@
     });
     map.attributionControl.setPrefix('TRP Meteorología');
 
-    [['neighbors', 250], ['countries', 300], ['municipios', 340], ['provinces', 350],
-     ['graticule', 360], ['outlooks', 420], ['countryLabels', 630], ['texts', 650]].forEach(function (p) {
+    [['neighbors', 250], ['countries', 300], ['graticule', 360], ['outlooks', 420],
+     ['municipios', 425], ['provinces', 428], ['countryBorders', 432], ['countryLabels', 630], ['texts', 650]].forEach(function (p) {
       var pane = map.createPane(p[0]); pane.style.zIndex = p[1];
       panes[p[0]] = pane;
       if (p[0] === 'countryLabels') pane.style.pointerEvents = 'none';
@@ -187,6 +189,7 @@
       // ocultar capas vectoriales de fondo
       if (layers.neighbors) { map.removeLayer(layers.neighbors); layers.neighbors = null; }
       if (layers.countries) { map.removeLayer(layers.countries); layers.countries = null; }
+      if (layers.countryBorders) { map.removeLayer(layers.countryBorders); layers.countryBorders = null; }
       if (layers.countryLabels) { map.removeLayer(layers.countryLabels); layers.countryLabels = null; }
       var t = TILE[mode];
       if (t) {
@@ -222,11 +225,28 @@
     if (geo.ar) tgt.push(geo.ar);
     if (geo.py) tgt.push(geo.py);
     if (tgt.length) {
+      // Relleno del terreno (sin trazo: el borde se dibuja arriba de los outlooks).
       layers.countries = L.geoJSON({ type: 'FeatureCollection', features: tgt }, {
         pane: 'countries',
-        style: { color: cfg.borderColor, weight: cfg.borderWidth, fillColor: cfg.land, fillOpacity: 1 }
+        style: { stroke: false, fillColor: cfg.land, fillOpacity: 1 }
       }).addTo(map);
     }
+    renderCountryBorders();
+  }
+
+  // Trazo de las fronteras de AR/PY, dibujado POR ENCIMA de los outlooks
+  // para que el relleno (incluso al 100%) no tape los límites.
+  function renderCountryBorders() {
+    if (layers.countryBorders) { map.removeLayer(layers.countryBorders); layers.countryBorders = null; }
+    if (cfg.basemap !== 'vector' && cfg.basemap !== 'vectordetail') return;
+    var tgt = [];
+    if (geo.ar) tgt.push(geo.ar);
+    if (geo.py) tgt.push(geo.py);
+    if (!tgt.length) return;
+    layers.countryBorders = L.geoJSON({ type: 'FeatureCollection', features: tgt }, {
+      pane: 'countryBorders', interactive: false,
+      style: { color: cfg.borderColor, weight: cfg.borderWidth, fill: false }
+    }).addTo(map);
   }
 
   function renderCountryLabels() {
@@ -250,16 +270,17 @@
     var data = adminData.adm1 || provinceGeoJSON;
     if (!data) return;
     layers.provinces = L.geoJSON(data, {
-      pane: 'provinces',
+      pane: 'provinces', interactive: false,
       style: { color: cfg.provinceColor, weight: cfg.provinceWidth, fill: false, dashArray: '3,3' }
     }).addTo(map);
   }
 
   function renderMunicipios() {
     if (layers.municipios) { map.removeLayer(layers.municipios); layers.municipios = null; }
-    if (!cfg.showMunicipios || !adminData.adm2) return;
-    layers.municipios = L.geoJSON(adminData.adm2, {
-      pane: 'municipios',
+    var data = adminData.adm2 || municipioGeoJSON;
+    if (!cfg.showMunicipios || !data) return;
+    layers.municipios = L.geoJSON(data, {
+      pane: 'municipios', interactive: false,
       style: { color: cfg.municipioColor, weight: cfg.municipioWidth, fill: false }
     }).addTo(map);
   }
@@ -346,8 +367,9 @@
         radius: r, color: '#ffffff', weight: 1, fillColor: cfg.cityDotColor, fillOpacity: 1
       });
       if (cfg.showCityLabels) {
+        var st = { fill: cfg.cityLabelColor, stroke: cfg.cityLabelStroke, strokeWidth: cfg.cityLabelStrokeWidth, font: cfg.cityLabelFont, size: cfg.cityLabelSize, bold: cfg.cityLabelBold };
         mk.bindTooltip(
-          '<span style="color:' + cfg.cityLabelColor + ';font-size:' + cfg.cityLabelSize + 'px">' + c.name + '</span>',
+          '<span style="' + textStyleCss(st) + '">' + escapeHtml(c.name) + '</span>',
           { permanent: true, direction: 'right', offset: [4, 0], className: 'city-label' }
         );
       }
@@ -841,6 +863,8 @@
     setCheck('showCities', cfg.showCities); setVal('cityRank', String(cfg.cityRank));
     setCheck('showCityLabels', cfg.showCityLabels); setVal('cityDotColor', cfg.cityDotColor);
     setVal('cityLabelColor', cfg.cityLabelColor); setRange('cityLabelSize', cfg.cityLabelSize, 'cityLabelSizeVal');
+    setVal('cityLabelStroke', cfg.cityLabelStroke); setRange('cityLabelStrokeWidth', cfg.cityLabelStrokeWidth, 'cityLabelStrokeWidthVal');
+    setVal('cityLabelFont', cfg.cityLabelFont); setCheck('cityLabelBold', cfg.cityLabelBold);
     setCheck('showCountryLabels', cfg.showCountryLabels);
     setCheck('showGraticule', cfg.showGraticule); setVal('graticuleColor', cfg.graticuleColor); setVal('graticuleStep', String(cfg.graticuleStep));
     setRange('fillOpacity', cfg.fillOpacity, 'fillOpacityVal'); setRange('outlookStroke', cfg.outlookStroke, 'outlookStrokeVal');
@@ -902,6 +926,10 @@
     bindColor('cityDotColor', 'cityDotColor', renderCities);
     bindColor('cityLabelColor', 'cityLabelColor', renderCities);
     bindRange('cityLabelSize', 'cityLabelSize', 'cityLabelSizeVal', renderCities);
+    bindColor('cityLabelStroke', 'cityLabelStroke', renderCities);
+    bindRange('cityLabelStrokeWidth', 'cityLabelStrokeWidth', 'cityLabelStrokeWidthVal', renderCities);
+    bindSelect('cityLabelFont', 'cityLabelFont', renderCities);
+    bindCheck('cityLabelBold', 'cityLabelBold', renderCities);
     bindCheck('showCountryLabels', 'showCountryLabels', renderCountryLabels);
     bindCheck('showGraticule', 'showGraticule', renderGraticule);
     bindColor('graticuleColor', 'graticuleColor', renderGraticule);
@@ -942,6 +970,7 @@
 
     // datos / archivos
     $('provinceFile').addEventListener('change', onProvinceFile);
+    $('municipioFile').addEventListener('change', onMunicipioFile);
     $('exportOutlookBtn').addEventListener('click', exportOutlook);
     $('importOutlookFile').addEventListener('change', importOutlook);
     $('exportSettingsBtn').addEventListener('click', exportSettings);
@@ -952,7 +981,7 @@
       loadGeo().then(function () { if (cfg.basemap === 'vector' || cfg.basemap === 'vectordetail') { renderVectorBasemap(); renderCountryLabels(); } toast('Mapa base recargado.', 'ok'); });
     });
     $('clearCacheBtn').addEventListener('click', function () {
-      [LS.geo, LS.prov, LS.adm].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      [LS.geo, LS.prov, LS.muni, LS.adm].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
       toast('Caché de datos borrada.', 'ok');
     });
     $('resetAllBtn').addEventListener('click', function () {
@@ -1007,6 +1036,19 @@
         try { localStorage.setItem(LS.prov, rd.result); } catch (x) {}
         if (!cfg.showProvinces) { cfg.showProvinces = true; setCheck('showProvinces', true); saveConfig(); }
         renderProvinces(); toast('Provincias cargadas.', 'ok');
+      } catch (x) { toast('GeoJSON inválido.', 'err'); }
+    };
+    rd.readAsText(file);
+  }
+  function onMunicipioFile(e) {
+    var file = e.target.files[0]; if (!file) return;
+    var rd = new FileReader();
+    rd.onload = function () {
+      try {
+        municipioGeoJSON = JSON.parse(rd.result);
+        try { localStorage.setItem(LS.muni, rd.result); } catch (x) {}
+        if (!cfg.showMunicipios) { cfg.showMunicipios = true; setCheck('showMunicipios', true); saveConfig(); }
+        renderMunicipios(); toast('Municipios cargados (usan su propio grosor).', 'ok');
       } catch (x) { toast('GeoJSON inválido.', 'err'); }
     };
     rd.readAsText(file);
@@ -1093,6 +1135,7 @@
 
     // provincias cacheadas
     try { var pr = localStorage.getItem(LS.prov); if (pr) provinceGeoJSON = JSON.parse(pr); } catch (e) {}
+    try { var mu = localStorage.getItem(LS.muni); if (mu) municipioGeoJSON = JSON.parse(mu); } catch (e) {}
     // municipios/provincias en caché (geoBoundaries)
     try { var ad = localStorage.getItem(LS.adm); if (ad) { var ao = JSON.parse(ad); if (ao && ao.adm1 && ao.adm2) adminData = ao; } } catch (e) {}
     loadOutlooks();

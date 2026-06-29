@@ -110,7 +110,21 @@
           <div class="ctl"><label><input type="checkbox" id="showCityLabels" /> Etiquetas de ciudades</label></div>
           <div class="ctl"><label>Color punto ciudad</label><input type="color" id="cityDotColor" /></div>
           <div class="ctl"><label>Color etiqueta ciudad</label><input type="color" id="cityLabelColor" /></div>
-          <div class="ctl"><label>Tamaño etiqueta</label><input type="range" id="cityLabelSize" min="8" max="18" step="1" /><span class="val" id="cityLabelSizeVal"></span></div>
+          <div class="ctl"><label>Trazo exterior etiqueta</label><input type="color" id="cityLabelStroke" /></div>
+          <div class="ctl"><label>Grosor de trazo</label><input type="range" id="cityLabelStrokeWidth" min="0" max="6" step="0.5" /><span class="val" id="cityLabelStrokeWidthVal"></span></div>
+          <div class="ctl"><label>Fuente etiqueta</label>
+            <select id="cityLabelFont" class="select select-sm">
+              <option value="sans-serif">Sans-serif</option>
+              <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+              <option value="'Arial Narrow', sans-serif">Arial Narrow</option>
+              <option value="Georgia, serif">Georgia</option>
+              <option value="serif">Serif</option>
+              <option value="'Courier New', monospace">Monospace</option>
+              <option value="Impact, sans-serif">Impact</option>
+            </select>
+          </div>
+          <div class="ctl"><label>Tamaño etiqueta</label><input type="range" id="cityLabelSize" min="8" max="24" step="1" /><span class="val" id="cityLabelSizeVal"></span></div>
+          <div class="ctl"><label><input type="checkbox" id="cityLabelBold" /> Etiqueta en negrita</label></div>
 
           <hr class="div" />
           <div class="ctl"><label><input type="checkbox" id="showCountryLabels" /> Etiquetas de países</label></div>
@@ -211,6 +225,10 @@
           <label class="field-label">Provincias / límites (GeoJSON)</label>
           <input type="file" id="provinceFile" accept=".geojson,.json" class="file-input" />
           <p class="hint">Opcional: cargá un GeoJSON de provincias/departamentos para mostrarlas.</p>
+
+          <label class="field-label" style="margin-top:8px;">Municipios / distritos (GeoJSON)</label>
+          <input type="file" id="municipioFile" accept=".geojson,.json" class="file-input" />
+          <p class="hint">Se dibujan con su <b>propio grosor</b> (más fino), independiente del de provincias.</p>
 
           <hr class="div" />
           <div class="btn-row">
