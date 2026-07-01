@@ -162,6 +162,7 @@
 
     layers.outlooks = L.featureGroup([], { pane: 'outlooks' }).addTo(map);
     layers.texts = L.featureGroup([], { pane: 'texts' }).addTo(map);
+    addCityLabelsToggleControl();
 
     map.on('mousemove', function (e) {
       $('coordReadout').textContent = 'lat ' + e.latlng.lat.toFixed(2) + ', lon ' + e.latlng.lng.toFixed(2);
@@ -452,6 +453,35 @@
       g.addLayer(mk);
     });
     g.addTo(map); layers.cities = g;
+  }
+
+  // Botón flotante sobre el mapa para mostrar/ocultar las etiquetas de ciudades
+  // sin necesidad de abrir el panel lateral.
+  var cityLabelsToggleBtn = null;
+  function addCityLabelsToggleControl() {
+    var ctl = L.control({ position: 'topright' });
+    ctl.onAdd = function () {
+      var btn = L.DomUtil.create('button', 'map-toggle-btn');
+      btn.type = 'button';
+      btn.title = 'Mostrar/ocultar nombres de ciudades';
+      L.DomEvent.disableClickPropagation(btn);
+      L.DomEvent.on(btn, 'click', function (e) {
+        L.DomEvent.stop(e);
+        cfg.showCityLabels = !cfg.showCityLabels;
+        setCheck('showCityLabels', cfg.showCityLabels);
+        saveConfig(); renderCities(); updateCityLabelsToggleBtn();
+      });
+      cityLabelsToggleBtn = btn;
+      updateCityLabelsToggleBtn();
+      return btn;
+    };
+    ctl.addTo(map);
+  }
+  function updateCityLabelsToggleBtn() {
+    if (!cityLabelsToggleBtn) return;
+    var on = cfg.showCityLabels;
+    cityLabelsToggleBtn.textContent = on ? '🏷️ Nombres: ON' : '🏷️ Nombres: OFF';
+    cityLabelsToggleBtn.classList.toggle('is-off', !on);
   }
 
   /* ----------------------- Cuadrícula ----------------------- */
@@ -941,7 +971,7 @@
     setRange('municipioLabelMinZoom', cfg.municipioLabelMinZoom, 'municipioLabelMinZoomVal');
     setVal('municipioLabelColor', cfg.municipioLabelColor);
     setCheck('showCities', cfg.showCities); setVal('cityRank', String(cfg.cityRank));
-    setCheck('showCityLabels', cfg.showCityLabels); setVal('cityDotColor', cfg.cityDotColor);
+    setCheck('showCityLabels', cfg.showCityLabels); updateCityLabelsToggleBtn(); setVal('cityDotColor', cfg.cityDotColor);
     setVal('cityLabelColor', cfg.cityLabelColor); setRange('cityLabelSize', cfg.cityLabelSize, 'cityLabelSizeVal');
     setVal('cityLabelStroke', cfg.cityLabelStroke); setRange('cityLabelStrokeWidth', cfg.cityLabelStrokeWidth, 'cityLabelStrokeWidthVal');
     setVal('cityLabelFont', cfg.cityLabelFont); setCheck('cityLabelBold', cfg.cityLabelBold); setCheck('cityLabelItalic', cfg.cityLabelItalic);
@@ -1006,7 +1036,7 @@
     $('loadAdminBtn').addEventListener('click', function () { loadAdminDetail(true); });
     bindCheck('showCities', 'showCities', renderCities);
     bindSelectNum('cityRank', 'cityRank', renderCities);
-    bindCheck('showCityLabels', 'showCityLabels', renderCities);
+    bindCheck('showCityLabels', 'showCityLabels', function () { renderCities(); updateCityLabelsToggleBtn(); });
     bindColor('cityDotColor', 'cityDotColor', renderCities);
     bindColor('cityLabelColor', 'cityLabelColor', renderCities);
     bindRange('cityLabelSize', 'cityLabelSize', 'cityLabelSizeVal', renderCities);
