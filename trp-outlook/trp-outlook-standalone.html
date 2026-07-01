@@ -225,9 +225,12 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 .draw-state { color: #ffd27d; font-weight: 600; }
 
 /* City labels & country labels on the vector map */
+/* Nota: el contorno/halo real se genera en JS (textStyleCss) según los
+   controles de "Trazo exterior"; acá NO se define text-shadow para evitar
+   un doble contorno (efecto de "texto duplicado" pixelado). */
 .city-label {
   background: transparent; border: none; box-shadow: none;
-  font-weight: 600; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.55);
+  font-weight: 600; white-space: nowrap;
   pointer-events: none;
 }
 .country-label {
@@ -1574,10 +1577,28 @@ hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   }
 
   /* ----------------------- Texto / etiquetas ----------------------- */
+  // Genera un halo/contorno nítido mediante múltiples text-shadow direccionales.
+  // Da un resultado mucho más limpio que -webkit-text-stroke (que en varios
+  // navegadores se ve "grumoso"/pixelado con letras chicas, como un texto
+  // fantasma detrás) y funciona igual en todos los navegadores.
+  function haloShadow(color, width) {
+    if (!width || width <= 0) return '';
+    var w = Math.min(width, 6);
+    var dirs = 8;
+    var rings = w > 2.2 ? [w, w * 0.55] : [w];
+    var shadows = [];
+    rings.forEach(function (r) {
+      for (var i = 0; i < dirs; i++) {
+        var a = (Math.PI * 2 * i) / dirs;
+        var dx = (r * Math.cos(a)).toFixed(2);
+        var dy = (r * Math.sin(a)).toFixed(2);
+        shadows.push(dx + 'px ' + dy + 'px 0 ' + color);
+      }
+    });
+    return 'text-shadow:' + shadows.join(',') + ';';
+  }
   function textStyleCss(st) {
-    var halo = (st.strokeWidth > 0)
-      ? ('-webkit-text-stroke:' + st.strokeWidth + 'px ' + st.stroke + ';paint-order:stroke fill;')
-      : '';
+    var halo = haloShadow(st.stroke, st.strokeWidth);
     return 'color:' + st.fill + ';font-family:' + st.font + ';font-size:' + st.size + 'px;' +
       (st.bold ? 'font-weight:700;' : 'font-weight:400;') + (st.italic ? 'font-style:italic;' : '') + halo;
   }

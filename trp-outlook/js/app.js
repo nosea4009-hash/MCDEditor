@@ -755,10 +755,28 @@
   }
 
   /* ----------------------- Texto / etiquetas ----------------------- */
+  // Genera un halo/contorno nítido mediante múltiples text-shadow direccionales.
+  // Da un resultado mucho más limpio que -webkit-text-stroke (que en varios
+  // navegadores se ve "grumoso"/pixelado con letras chicas, como un texto
+  // fantasma detrás) y funciona igual en todos los navegadores.
+  function haloShadow(color, width) {
+    if (!width || width <= 0) return '';
+    var w = Math.min(width, 6);
+    var dirs = 8;
+    var rings = w > 2.2 ? [w, w * 0.55] : [w];
+    var shadows = [];
+    rings.forEach(function (r) {
+      for (var i = 0; i < dirs; i++) {
+        var a = (Math.PI * 2 * i) / dirs;
+        var dx = (r * Math.cos(a)).toFixed(2);
+        var dy = (r * Math.sin(a)).toFixed(2);
+        shadows.push(dx + 'px ' + dy + 'px 0 ' + color);
+      }
+    });
+    return 'text-shadow:' + shadows.join(',') + ';';
+  }
   function textStyleCss(st) {
-    var halo = (st.strokeWidth > 0)
-      ? ('-webkit-text-stroke:' + st.strokeWidth + 'px ' + st.stroke + ';paint-order:stroke fill;')
-      : '';
+    var halo = haloShadow(st.stroke, st.strokeWidth);
     return 'color:' + st.fill + ';font-family:' + st.font + ';font-size:' + st.size + 'px;' +
       (st.bold ? 'font-weight:700;' : 'font-weight:400;') + (st.italic ? 'font-style:italic;' : '') + halo;
   }
